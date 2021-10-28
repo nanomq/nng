@@ -86,6 +86,7 @@ client_connect(nng_socket *sock, const char *url, bool verbose)
 	nng_dialer_start(dialer, NNG_FLAG_NONBLOCK);
 
 	// create a CONNECT message
+	/* CONNECT */
 	nng_msg *connmsg;
 	nng_mqtt_msg_alloc(&connmsg, 0);
 	nng_mqtt_msg_set_packet_type(connmsg, NNG_MQTT_CONNECT);
@@ -112,12 +113,14 @@ client_connect(nng_socket *sock, const char *url, bool verbose)
 	}
 
 	printf("Connecting to server ...");
-	if ((rv = nng_sendmsg(*sock, connmsg, 0)) != 0) {
-		fatal("nng_sendmsg", rv);
-	}
+	nng_dialer_set_ptr(dialer, "connmsg", connmsg);
+	nng_dialer_start(dialer, NNG_FLAG_NONBLOCK);
+
 	printf("connected\n");
 
-	nng_msg_free(connmsg);
+//	TODO Connmsg would be free when client disconnected
+//	nng_msg_free(connmsg);
+	nni_mqtt_msg_proto_data_free(connmsg);
 
 	return (0);
 }
