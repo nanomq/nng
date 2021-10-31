@@ -35,9 +35,10 @@ static void mqtt_sock_send(void *arg, nni_aio *aio);
 static void mqtt_sock_recv(void *arg, nni_aio *aio);
 static void mqtt_send_cb(void *arg);
 static void mqtt_recv_cb(void *arg);
-static void mqtt_send_start(mqtt_sock_t *s, nni_aio *aio);
+static void mqtt_keep_alive_cb(void *arg);
+static void mqtt_timer_cb(void *arg);
+static void mqtt_send_start(mqtt_sock_t *s);
 static void mqtt_recv_start(mqtt_sock_t *s, nni_aio *aio);
-static void mqtt_run_send_queue(mqtt_sock_t *s);
 static void mqtt_run_recv_queue(mqtt_sock_t *s);
 
 static int  mqtt_pipe_init(void *arg, nni_pipe *pipe, void *s);
@@ -57,6 +58,7 @@ typedef enum {
 	WORK_CONNECT,
 	WORK_CONNACK,
 	WORK_DISCONNECT,  // send      DISCONNECT
+	WORK_PINGREQ,     // send      PINGREQ
 	WORK_PUBACK,      // send/recv PUBACK
 	WORK_PUBCOMP,     // send/recv PUBCOMP
 	WORK_PUBLISH,     // send/recv PUBLISH
@@ -72,14 +74,15 @@ typedef enum {
 
 // A work_t represents an asynchronous send/recv of MQTT packet.
 typedef struct {
-	work_state_t  state;
-	uint8_t       qos;       // QoS of the MQTT PUBLISH packet
-	uint16_t      packet_id; // packet id of the message that have it
-	mqtt_sock_t * mqtt_sock;
-	nni_msg *     msg;
-	nni_aio *     user_aio;
-	nni_aio       send_aio; // send aio to the underlying transport
-	nni_list_node node;     // in one of send_queue, free_list
+	work_state_t   state;
+	uint8_t        qos;       // QoS of the MQTT PUBLISH packet
+	uint16_t       packet_id; // packet id of the message that have it
+	mqtt_sock_t *  mqtt_sock;
+	nni_msg *      msg;      // message to send, or receive from pipe
+	nni_aio *      user_aio; // if not null, the aio that starts this work
+	nni_duration   timeout;  // time out in milliseconds
+	nni_timer_node timer;    // timer
+	nni_list_node  node; // in one of send_queue, recv_queue or free_list
 } work_t;
 
 // A mqtt_ctx_s is our per-ctx protocol private state.
@@ -93,8 +96,11 @@ struct mqtt_pipe_s {
 	nni_atomic_int  next_packet_id; // next packet id to use
 	nni_pipe *      pipe;
 	mqtt_sock_t *   mqtt_sock;
+	work_t *        work;          // work the pipe is sending
+	work_t          ping_work;     // work to send a ping request
 	nni_id_map      send_unack;    // send messages unacknowledged
 	nni_id_map      recv_unack;    // recv messages unacknowledged
+	nni_aio         send_aio;      // send aio to the underlying transport
 	nni_aio         recv_aio;      // recv aio to the underlying transport
 	nni_lmq         recv_messages; // recv messages queue
 };
@@ -118,22 +124,26 @@ struct mqtt_sock_s {
  ******************************************************************************/
 
 static inline void
-work_init(work_t *work, mqtt_sock_t *s)
+work_init(
+    work_t *work, mqtt_sock_t *s, nni_duration timeout_ms, nni_cb timer_cb)
 {
 	work->state     = WORK_START;
 	work->qos       = 0;
 	work->packet_id = 0;
 	work->msg       = NULL;
 	work->user_aio  = NULL;
-	nni_aio_init(&work->send_aio, mqtt_send_cb, work);
 	work->mqtt_sock = s;
+	work->timeout   = timeout_ms;
+	nni_timer_init(&work->timer, timer_cb, work);
 	NNI_LIST_NODE_INIT(&work->node);
 }
 
 static inline void
 work_fini(work_t *work)
 {
-	nni_aio_fini(&work->send_aio);
+	nni_timer_cancel(&work->timer);
+	nni_timer_fini(&work->timer);
+	nni_msg_free(work->msg);
 }
 
 static inline void
@@ -145,6 +155,7 @@ work_reset(work_t *work)
 	nni_msg_free(work->msg);
 	work->msg      = NULL;
 	work->user_aio = NULL;
+	// NOTE: keep the timeout
 	nni_list_node_remove(&work->node);
 }
 
@@ -153,7 +164,6 @@ work_reset(work_t *work)
 static inline void
 work_stop(work_t *work)
 {
-	nni_aio_stop(&work->send_aio);
 	nni_list_node_remove(&work->node);
 }
 
@@ -162,9 +172,9 @@ work_stop(work_t *work)
 static inline void
 work_close(work_t *work)
 {
-	nni_aio_close(&work->send_aio);
 	if (NULL != work->user_aio) {
 		nni_aio_finish_error(work->user_aio, NNG_ECONNRESET);
+		nni_msg_free(work->msg);
 		work->msg      = NULL;
 		work->user_aio = NULL;
 	}
@@ -187,6 +197,12 @@ work_close_queue(nni_list *queue)
 	NNI_LIST_FOREACH (queue, work) {
 		work_close(work);
 	}
+}
+
+static inline void
+work_timer_schedule(work_t *work)
+{
+	nni_timer_schedule(&work->timer, nni_clock() + work->timeout);
 }
 
 /******************************************************************************
@@ -218,7 +234,7 @@ mqtt_sock_init(void *arg, nni_sock *sock)
 	NNI_LIST_INIT(&s->recv_queue, work_t, node);
 	NNI_LIST_INIT(&s->free_list, work_t, node);
 	for (int i = 0; i < MQTT_WORK_NUM; ++i) {
-		work_init(&s->works[i], s);
+		work_init(&s->works[i], s, s->retry, mqtt_timer_cb);
 		nni_list_append(&s->free_list, &s->works[i]);
 	}
 
@@ -290,6 +306,13 @@ mqtt_pipe_init(void *arg, nni_pipe *pipe, void *s)
 	nni_atomic_set(&p->next_packet_id, 0);
 	p->pipe      = pipe;
 	p->mqtt_sock = s;
+	p->work      = NULL;
+	// FIXME: passing keep alive timeout
+	work_init(&p->ping_work, s, sock->retry, mqtt_keep_alive_cb);
+	nni_mqtt_msg_alloc(&p->ping_work.msg, 0);
+	nni_mqtt_msg_set_packet_type(p->ping_work.msg, NNG_MQTT_PINGREQ);
+	nni_mqtt_msg_encode(p->ping_work.msg);
+	nni_aio_init(&p->send_aio, mqtt_send_cb, p);
 	nni_aio_init(&p->recv_aio, mqtt_recv_cb, p);
 	// Packet IDs are 16 bits
 	// We start at a random point, to minimize likelihood of
@@ -304,6 +327,8 @@ static void
 mqtt_pipe_fini(void *arg)
 {
 	mqtt_pipe_t *p = arg;
+	work_fini(&p->ping_work);
+	nni_aio_fini(&p->send_aio);
 	nni_aio_fini(&p->recv_aio);
 	nni_id_map_fini(&p->send_unack);
 	nni_id_map_fini(&p->recv_unack);
@@ -322,7 +347,7 @@ mqtt_pipe_start(void *arg)
 	// }
 
 	nni_mtx_lock(&s->mtx);
-	mqtt_run_send_queue(s);
+	mqtt_send_start(s);
 	nni_mtx_unlock(&s->mtx);
 
 	nni_pipe_recv(p->pipe, &p->recv_aio);
@@ -337,6 +362,7 @@ mqtt_pipe_stop(void *arg)
 	mqtt_sock_t *s = p->mqtt_sock;
 
 	nni_mtx_lock(&s->mtx);
+	nni_aio_stop(&p->send_aio);
 	nni_aio_stop(&p->recv_aio);
 	work_stop_queue(&s->send_queue);
 	work_stop_queue(&s->recv_queue);
@@ -352,6 +378,8 @@ mqtt_pipe_close(void *arg)
 	nni_mtx_lock(&s->mtx);
 	mqtt_sock_close(s);
 	s->mqtt_pipe = NULL;
+	p->work      = NULL;
+	nni_aio_close(&p->send_aio);
 	nni_aio_close(&p->recv_aio);
 	work_close_queue(&s->send_queue);
 	work_close_queue(&s->recv_queue);
@@ -371,20 +399,51 @@ mqtt_pipe_get_next_packet_id(mqtt_pipe_t *p)
 	return packet_id & 0xFFFF;
 }
 
+// Keep alive timer callback to send ping request.
 static void
-mqtt_send_cb(void *arg)
+mqtt_keep_alive_cb(void *arg)
 {
 	work_t *     work = arg;
 	mqtt_sock_t *s    = work->mqtt_sock;
-	mqtt_pipe_t *p;
 
 	nni_mtx_lock(&s->mtx);
-	p = s->mqtt_pipe;
 
-	if (nni_aio_result(&work->send_aio) != 0) {
+	mqtt_pipe_t *p = s->mqtt_pipe;
+
+	if (NULL == p || nni_atomic_get_bool(&p->closed)) {
+		return;
+	}
+
+	// keep alive time out
+	// if there is work in the send queue, no need to send PINGREQ
+	if (nni_list_empty(&s->send_queue)) {
+		// no work in send queue, then send a PINGREQ
+		nni_list_append(&s->send_queue, &p->ping_work);
+		mqtt_send_start(s);
+	}
+
+	nni_mtx_unlock(&s->mtx);
+}
+
+static void
+mqtt_timer_cb(void *arg)
+{
+	// TODO: handle retry
+}
+
+static void
+mqtt_send_cb(void *arg)
+{
+	mqtt_pipe_t *p    = arg;
+	mqtt_sock_t *s    = p->mqtt_sock;
+	work_t *     work = p->work;
+
+	nni_mtx_lock(&s->mtx);
+
+	if (nni_aio_result(&p->send_aio) != 0) {
 		// We failed to send... clean up and deal with it.
-		nni_msg_free(nni_aio_get_msg(&work->send_aio));
-		nni_aio_set_msg(&work->send_aio, NULL);
+		nni_msg_free(nni_aio_get_msg(&p->send_aio));
+		nni_aio_set_msg(&p->send_aio, NULL);
 		nni_mtx_unlock(&s->mtx);
 		nni_pipe_close(p->pipe);
 		return;
@@ -427,9 +486,16 @@ mqtt_send_cb(void *arg)
 		nni_id_remove(&p->recv_unack, work->packet_id);
 		nni_lmq_putq(&p->recv_messages, work->msg);
 		mqtt_run_recv_queue(s);
-		work->msg = NULL;
+		work->msg = NULL; // ownership to the lmq
 		work_reset(work);
 		nni_list_append(&s->free_list, work);
+		mqtt_send_start(s);
+		nni_mtx_unlock(&s->mtx);
+		return;
+
+	case WORK_PINGREQ:
+		// we have sent a PINGREQ
+		mqtt_send_start(s);
 		nni_mtx_unlock(&s->mtx);
 		return;
 
@@ -494,6 +560,8 @@ mqtt_send_cb(void *arg)
 		nni_list_append(&s->free_list, work);
 	}
 
+	p->work = NULL;
+	mqtt_send_start(s);
 	nni_mtx_unlock(&s->mtx);
 }
 
@@ -559,37 +627,44 @@ mqtt_recv_cb(void *arg)
 	case NNG_MQTT_UNSUBACK:
 		// we have received a UNSUBACK, successful unsubcription
 		// FIXME: check packet type match
-		packet_id = nni_mqtt_msg_get_unsuback_packet_id(msg);
-		work      = nni_id_get(&p->send_unack, packet_id);
+		packet_id = nni_mqtt_msg_get_packet_id(msg);
+		nni_msg_free(msg);
+		work = nni_id_get(&p->send_unack, packet_id);
 		if (NULL == work) {
-			nni_msg_free(msg);
 			nni_mtx_unlock(&s->mtx);
 			nni_pipe_close(p->pipe);
 			return;
 		}
-		nni_msg_free(msg);
 		nni_id_remove(&p->send_unack, packet_id);
 		work->state = WORK_END;
 		break;
+
+	case NNG_MQTT_PINGRESP:
+		// do nothing
+		nni_mtx_unlock(&s->mtx);
+		return;
 
 	case NNG_MQTT_PUBREC:
 		// we have received a PUBRECV in the QoS 2 delivery,
 		// then send a PUBREL
 		packet_id = nni_mqtt_msg_get_pubrec_packet_id(msg);
-		work      = nni_id_get(&p->send_unack, packet_id);
+		nni_msg_free(msg);
+		work = nni_id_get(&p->send_unack, packet_id);
 		if (NULL == work) {
-			nni_msg_free(msg);
+			// ignore this message
 			nni_mtx_unlock(&s->mtx);
-			nni_pipe_close(p->pipe);
 			return;
 		}
-		work->state = WORK_PUBREL;
+		// the transport handled sending the PUBREL for us
+		// work->state = WORK_PUBREL;
 		// reuse msg
-		nni_mqtt_msg_set_packet_type(msg, NNG_MQTT_PUBREL);
-		nni_mqtt_msg_set_pubrel_packet_id(msg, packet_id);
-		nni_mqtt_msg_encode(msg);
-		nni_aio_set_msg(&work->send_aio, msg);
-		nni_pipe_send(p->pipe, &work->send_aio);
+		// nni_mqtt_msg_set_packet_type(msg, NNG_MQTT_PUBREL);
+		// nni_mqtt_msg_set_pubrel_packet_id(msg, packet_id);
+		// nni_mqtt_msg_encode(msg);
+		// nni_aio_set_msg(&work->send_aio, msg);
+		// nni_pipe_send(p->pipe, &work->send_aio);
+		nni_id_remove(&p->send_unack, packet_id);
+		work->state = WORK_PUBCOMP;
 		break;
 
 	case NNG_MQTT_PUBREL:
@@ -597,25 +672,36 @@ mqtt_recv_cb(void *arg)
 		packet_id = nni_mqtt_msg_get_pubrel_packet_id(msg);
 		work      = nni_id_get(&p->recv_unack, packet_id);
 		if (NULL == work) {
+			// ignore this message
 			nni_msg_free(msg);
 			nni_mtx_unlock(&s->mtx);
-			nni_pipe_close(p->pipe);
 			return;
 		}
-		work->state = WORK_PUBCOMP;
+		// the transport handled sending the PUBCOMP for us
+		work->state = WORK_END;
+		nni_id_remove(&p->recv_unack, work->packet_id);
+		nni_lmq_putq(&p->recv_messages, work->msg);
+		mqtt_run_recv_queue(s);
+		work->msg = msg;  // ownership of work->msg to the lmq
+		work_reset(work); // will release msg
+		nni_list_append(&s->free_list, work);
+		nni_mtx_unlock(&s->mtx);
+		return;
+		// work->state = WORK_PUBCOMP;
 		// reuse msg
-		nni_mqtt_msg_set_packet_type(msg, NNG_MQTT_PUBCOMP);
-		nni_mqtt_msg_set_pubcomp_packet_id(msg, packet_id);
-		nni_mqtt_msg_encode(msg);
-		nni_aio_set_msg(&work->send_aio, msg);
-		nni_pipe_send(p->pipe, &work->send_aio);
+		// nni_mqtt_msg_set_packet_type(msg, NNG_MQTT_PUBCOMP);
+		// nni_mqtt_msg_set_pubcomp_packet_id(msg, packet_id);
+		// nni_mqtt_msg_encode(msg);
+		// nni_aio_set_msg(&work->send_aio, msg);
+		// nni_pipe_send(p->pipe, &work->send_aio);
 		break;
 
 	case NNG_MQTT_PUBLISH:
 		// we have received a PUBLISH
 		qos = nni_mqtt_msg_get_publish_qos(msg);
-		if (0 == qos) {
+		if (2 > qos) {
 			// QoS 0, successful receipt
+			// QoS 1, the transport handled sending a PUBACK
 			nni_lmq_putq(&p->recv_messages, msg);
 			mqtt_run_recv_queue(s);
 			nni_mtx_unlock(&s->mtx);
@@ -628,26 +714,18 @@ mqtt_recv_cb(void *arg)
 			work->msg = msg;
 			work->packet_id =
 			    nni_mqtt_msg_get_publish_packet_id(msg);
-			nni_mqtt_msg_alloc(&msg, 0);
-
-			if (1 == qos) {
-				// QoS 1, then send a PUBACK
-				work->state = WORK_PUBACK;
-				nni_mqtt_msg_set_packet_type(msg, NNG_MQTT_PUBACK);
-				nni_mqtt_msg_set_puback_packet_id(
-				    msg, work->packet_id);
-			} else {
-				// QoS 2, then send a PUBRECV
-				work->state = WORK_PUBRECV;
-				nni_mqtt_msg_set_packet_type(msg, NNG_MQTT_PUBREC);
-				nni_mqtt_msg_set_pubrec_packet_id(
-				    msg, work->packet_id);
-			}
-
-			nni_mqtt_msg_encode(msg);
-			nni_aio_set_msg(&work->send_aio, msg);
+			// the transport handled sending PUBACK/PUBRECV
+			work->state = WORK_PUBREL;
 			nni_id_set(&p->recv_unack, work->packet_id, work);
-			nni_pipe_send(p->pipe, &work->send_aio);
+			// nni_mqtt_msg_alloc(&msg, 0);
+			// QoS 2, then send a PUBRECV
+			// work->state = WORK_PUBRECV;
+			// nni_mqtt_msg_set_packet_type(msg, NNG_MQTT_PUBREC);
+			// nni_mqtt_msg_set_pubrec_packet_id(msg,
+			// work->packet_id);
+			// nni_mqtt_msg_encode(msg);
+			// nni_aio_set_msg(&work->send_aio, msg);
+			// nni_pipe_send(p->pipe, &work->send_aio);
 		}
 		break;
 
@@ -672,28 +750,6 @@ mqtt_recv_cb(void *arg)
 	nni_mtx_unlock(&s->mtx);
 
 	return;
-}
-
-static void
-mqtt_send_start(mqtt_sock_t *s, nni_aio *aio)
-{
-	work_t *work;
-
-	nni_mtx_lock(&s->mtx);
-
-	work = nni_list_first(&s->free_list);
-	if (NULL == work) {
-		nni_mtx_unlock(&s->mtx);
-		nni_aio_finish_error(aio, NNG_EBUSY);
-		return;
-	}
-
-	work->user_aio = aio;
-	nni_list_remove(&s->free_list, work);
-	nni_list_append(&s->send_queue, work); // enqueue to send
-	mqtt_run_send_queue(s);
-
-	nni_mtx_unlock(&s->mtx);
 }
 
 static void
@@ -735,7 +791,8 @@ mqtt_run_recv_queue(mqtt_sock_t *s)
 		nni_list_remove(&s->recv_queue, work);
 		// nni_pipe_recv(p->pipe, &work->recv_aio);
 		nni_aio_set_msg(work->user_aio, msg);
-		nni_aio_finish_sync(work->user_aio, 0, nni_msg_len(msg));
+		nni_aio_finish_sync(work->user_aio, 0,
+		    nni_msg_header_len(msg) + nni_msg_len(msg));
 		nni_list_append(&s->free_list, work);
 		work = nni_list_first(&s->recv_queue);
 	}
@@ -745,7 +802,7 @@ mqtt_run_recv_queue(mqtt_sock_t *s)
 
 // Note: This routine should be called with the sock lock held.
 static void
-mqtt_run_send_queue(mqtt_sock_t *s)
+mqtt_send_start(mqtt_sock_t *s)
 {
 	work_t *     work;
 	mqtt_pipe_t *p = s->mqtt_pipe;
@@ -757,48 +814,63 @@ mqtt_run_send_queue(mqtt_sock_t *s)
 	}
 
 	// TODO: handle retry
-	while (NULL != (work = nni_list_first(&s->send_queue))) {
+	if (NULL != (work = nni_list_first(&s->send_queue))) {
 		nni_list_remove(&s->send_queue, work);
-		nni_msg *msg = nni_aio_get_msg(work->user_aio);
-		packet_type  = nni_mqtt_msg_get_packet_type(msg);
+		packet_type = nni_mqtt_msg_get_packet_type(work->msg);
 
-		// only allow to send PUBLISH, SUBSCRIBE and UNSUBSCRIBE packet
+		// only allow to send CONNECT, PINGREQ, PUBLISH, SUBSCRIBE
+		// and UNSUBSCRIBE
 		switch (packet_type) {
 		case NNG_MQTT_CONNECT:
+			// NOTE: the transport dialer will send a CONNECT
 			work->state = WORK_CONNECT;
 			break;
-		case NNG_MQTT_PUBLISH:
-			work->state     = WORK_PUBLISH;
-			work->packet_id = mqtt_pipe_get_next_packet_id(p);
-			nni_mqtt_msg_set_publish_packet_id(
-			    msg, work->packet_id);
-			work->qos = nni_mqtt_msg_get_publish_qos(msg);
+
+		case NNG_MQTT_PINGREQ:
+			work->state = WORK_PINGREQ;
 			break;
+
+		case NNG_MQTT_PUBLISH:
+			work->state = WORK_PUBLISH;
+			work->qos   = nni_mqtt_msg_get_publish_qos(work->msg);
+			if (work->qos > 0) {
+				work->packet_id =
+				    mqtt_pipe_get_next_packet_id(p);
+				nni_mqtt_msg_set_publish_packet_id(
+				    work->msg, work->packet_id);
+				nni_mqtt_msg_encode(work->msg);
+			}
+			break;
+
 		case NNG_MQTT_SUBSCRIBE:
 			work->state     = WORK_SUBSCRIBE;
 			work->packet_id = mqtt_pipe_get_next_packet_id(p);
 			nni_mqtt_msg_set_subscribe_packet_id(
-			    msg, work->packet_id);
+			    work->msg, work->packet_id);
+			nni_mqtt_msg_encode(work->msg);
 			break;
+
 		case NNG_MQTT_UNSUBSCRIBE:
 			work->state     = WORK_UNSUBSCRIBE;
 			work->packet_id = mqtt_pipe_get_next_packet_id(p);
 			nni_mqtt_msg_set_unsubscribe_packet_id(
-			    msg, work->packet_id);
+			    work->msg, work->packet_id);
+			nni_mqtt_msg_encode(work->msg);
 			break;
+
 		default:
 			work->state = WORK_ERROR;
-			nni_mtx_unlock(&s->mtx);
 			nni_aio_finish_error(work->user_aio, NNG_EPROTO);
 			return;
 		}
 
-		nni_msg_clone(msg);
-		nni_aio_set_msg(work->user_aio, NULL);
-		nni_aio_bump_count(work->user_aio, nni_msg_len(msg));
-		work->msg = msg;
-		nni_aio_set_msg(&work->send_aio, msg);
-		nni_pipe_send(p->pipe, &work->send_aio);
+		nni_msg_clone(work->msg);
+		p->work = work;
+		nni_aio_set_msg(&p->send_aio, work->msg);
+		nni_pipe_send(p->pipe, &p->send_aio);
+	} else {
+		// no packet to send, start the ping request timer
+		work_timer_schedule(&p->ping_work);
 	}
 
 	return;
@@ -830,17 +902,38 @@ mqtt_ctx_send(void *arg, nni_aio *aio)
 {
 	mqtt_ctx_t * ctx = arg;
 	mqtt_sock_t *s   = ctx->mqtt_sock;
+	work_t *     work;
 
 	if (nni_aio_begin(aio) != 0) {
 		return;
 	}
+
+	nni_mtx_lock(&s->mtx);
 
 	if (nni_atomic_get_bool(&s->closed)) {
 		nni_aio_finish_error(aio, NNG_ECLOSED);
 		return;
 	}
 
-	mqtt_send_start(s, aio);
+	work = nni_list_first(&s->free_list);
+	if (NULL == work) {
+		nni_mtx_unlock(&s->mtx);
+		nni_aio_finish_error(aio, NNG_EBUSY);
+		return;
+	}
+
+	work->user_aio = aio;
+	work->msg      = nni_aio_get_msg(aio);
+	nni_aio_bump_count(
+	    aio, nni_msg_header_len(work->msg) + nni_msg_len(work->msg));
+	nni_list_remove(&s->free_list, work);
+	nni_list_append(&s->send_queue, work); // enqueue to send
+
+	if (nni_list_first(&s->send_queue) == work) {
+		mqtt_send_start(s);
+	}
+
+	nni_mtx_unlock(&s->mtx);
 }
 
 static void
