@@ -120,7 +120,7 @@ client_connect(nng_socket *sock, const char *url, bool verbose)
 
 //	TODO Connmsg would be free when client disconnected
 //	nng_msg_free(connmsg);
-	nni_mqtt_msg_proto_data_free(connmsg);
+	nng_mqtt_msg_proto_data_free(connmsg);
 
 	return (0);
 }
@@ -136,6 +136,7 @@ client_subscribe(nng_socket sock, nng_mqtt_topic_qos *subscriptions, int count,
 	nng_msg *submsg;
 	nng_mqtt_msg_alloc(&submsg, 0);
 	nng_mqtt_msg_set_packet_type(submsg, NNG_MQTT_SUBSCRIBE);
+
 	nng_mqtt_msg_set_subscribe_topics(submsg, subscriptions, count);
 
 	rv = nng_mqtt_msg_encode(submsg);
@@ -260,11 +261,13 @@ main(const int argc, const char **argv)
 		const char *data = argv[5];
 		rv = client_publish(sock, topic, data, qos, verbose);
 	} else if (SUBSCRIBE == cmd) {
-		nng_mqtt_topic_qos *subscriptions =
-		    nng_mqtt_topic_qos_array_create(1);
-		nng_mqtt_topic_qos_array_set(subscriptions, 0, topic, qos);
+		nng_mqtt_topic_qos subscriptions[] = {
+			{ .qos     = qos,
+			    .topic = { .buf = (uint8_t *) topic,
+			        .length     = strlen(topic) } },
+		};
+
 		rv = client_subscribe(sock, subscriptions, 1, verbose);
-		nng_mqtt_topic_qos_array_free(subscriptions, 1);
 	}
 
 	nng_msleep(1000);

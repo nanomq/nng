@@ -23,26 +23,28 @@ test_dup(void)
 	nng_mqtt_msg_set_packet_type(msg, NNG_MQTT_SUBSCRIBE);
 	NUTS_ASSERT(nng_mqtt_msg_get_packet_type(msg) == NNG_MQTT_SUBSCRIBE);
 
-	size_t              sz        = 2;
-	nng_mqtt_topic_qos *topic_qos = nng_mqtt_topic_qos_array_create(sz);
-	nng_mqtt_topic_qos_array_set(topic_qos, 0, "/nanomq/mqtt/msg/0", 1);
-	nng_mqtt_topic_qos_array_set(topic_qos, 1, "/nanomq/mqtt/msg/1", 1);
-
-	nng_mqtt_msg_set_subscribe_topics(msg, topic_qos, sz);
+	nng_mqtt_topic_qos topic_qos[] = {
+		{ .qos     = 0,
+		    .topic = { .buf = (uint8_t *) "/nanomq/mqtt/msg/0",
+		        .length     = strlen("/nanomq/mqtt/msg/0") } },
+		{ .qos     = 1,
+		    .topic = { .buf = (uint8_t *) "/nanomq/mqtt/msg/1",
+		        .length     = strlen("/nanomq/mqtt/msg/1") } }
+	};
+	nng_mqtt_msg_set_subscribe_topics(
+	    msg, topic_qos, sizeof(topic_qos) / sizeof(nng_mqtt_topic_qos));
 
 	NUTS_PASS(nng_mqtt_msg_encode(msg));
 
 	nng_msg *msg2;
 	NUTS_PASS(nng_msg_dup(&msg2, msg));
 
-	// uint8_t print_buf[1024] = { 0 };
-	// nng_mqtt_msg_dump(msg, print_buf, 1024, true);
-	// printf("msg: \n%s\n", print_buf);
+	uint8_t print_buf[1024] = { 0 };
+	nng_mqtt_msg_dump(msg, print_buf, 1024, true);
+	printf("msg: \n%s\n", print_buf);
 
-	// nng_mqtt_msg_dump(msg2, print_buf, 1024, true);
-	// printf("msg2: \n%s\n", print_buf);
-
-	nng_mqtt_topic_qos_array_free(topic_qos, sz);
+	nng_mqtt_msg_dump(msg2, print_buf, 1024, true);
+	printf("msg2: \n%s\n", print_buf);
 
 	nng_msg_free(msg);
 	nng_msg_free(msg2);
@@ -58,15 +60,106 @@ test_encode_connect(void)
 	nng_mqtt_msg_set_packet_type(msg, NNG_MQTT_CONNECT);
 	NUTS_ASSERT(nng_mqtt_msg_get_packet_type(msg) == NNG_MQTT_CONNECT);
 
-	nng_mqtt_msg_set_connect_client_id(msg, "nanomq-mqtt");
-	NUTS_ASSERT(strcmp(nng_mqtt_msg_get_connect_client_id(msg),
-	                "nanomq-mqtt") == 0);
+	// nng_mqtt_msg_set_connect_client_id(msg, "nanomq-mqtt");
+	// NUTS_ASSERT(strcmp(nng_mqtt_msg_get_connect_client_id(msg),
+	// "nanomq-mqtt") == 0);
+
+	char will_topic[] = "/nanomq/will_msg";
+	nng_mqtt_msg_set_connect_will_topic(msg, will_topic);
+
+	char will_msg[] = "Bye-bye";
+	nng_mqtt_msg_set_connect_will_msg(msg, will_msg);
+
+	char user[]   = "alvin";
+	char passwd[] = "HHH0000";
+
+	nng_mqtt_msg_set_connect_user_name(msg, user);
+	nng_mqtt_msg_set_connect_password(msg, passwd);
+	nng_mqtt_msg_set_connect_clean_session(msg, true);
+	nng_mqtt_msg_set_connect_keep_alive(msg, 60);
+
+	NUTS_PASS(nng_mqtt_msg_encode(msg));
+
+	nng_msg *dup_msg;
+	nng_msg_dup(&dup_msg, msg);
+	NUTS_PASS(nng_mqtt_msg_decode(dup_msg));
+
+	uint8_t print_buf[1024] = { 0 };
+	nng_mqtt_msg_dump(msg, print_buf, 1024, true);
+	printf("msg:\n%s\n", print_buf);
+
+	nng_mqtt_msg_dump(dup_msg, print_buf, 1024, true);
+	printf("dup msg:\n%s\n", print_buf);
+
+	nng_msg_free(msg);
+	nng_msg_free(dup_msg);
+}
+
+void
+test_encode_connack(void)
+{
+	nng_msg *msg;
+
+	NUTS_PASS(nng_mqtt_msg_alloc(&msg, 0));
+
+	nng_mqtt_msg_set_packet_type(msg, NNG_MQTT_CONNACK);
+	NUTS_ASSERT(nng_mqtt_msg_get_packet_type(msg) == NNG_MQTT_CONNACK);
+
+	nng_mqtt_msg_set_conack_flags(msg, 1);
+
+	nng_mqtt_msg_set_conack_return_code(msg, 0);
 
 	NUTS_PASS(nng_mqtt_msg_encode(msg));
 
 	uint8_t print_buf[1024] = { 0 };
 	nng_mqtt_msg_dump(msg, print_buf, 1024, true);
-	// printf("%s\n", print_buf);
+	printf("%s\n", print_buf);
+	nng_msg_free(msg);
+}
+
+void
+test_encode_publish(void)
+{
+	nng_msg *msg;
+
+	NUTS_PASS(nng_mqtt_msg_alloc(&msg, 0));
+
+	nng_mqtt_msg_set_packet_type(msg, NNG_MQTT_PUBLISH);
+	NUTS_ASSERT(nng_mqtt_msg_get_packet_type(msg) == NNG_MQTT_PUBLISH);
+
+	nng_mqtt_msg_set_publish_qos(msg, 2);
+	nng_mqtt_msg_set_publish_retain(msg, true);
+
+	char *topic = "/nanomq/msg/18234";
+	nng_mqtt_msg_set_publish_topic(msg, topic);
+
+	char *payload = "hello";
+	nng_mqtt_msg_set_publish_payload(
+	    msg, (uint8_t *) payload, strlen(payload));
+
+	NUTS_PASS(nng_mqtt_msg_encode(msg));
+
+	uint8_t print_buf[1024] = { 0 };
+	nng_mqtt_msg_dump(msg, print_buf, 1024, true);
+	printf("%s\n", print_buf);
+	nng_msg_free(msg);
+}
+
+void
+test_encode_puback(void)
+{
+	nng_msg *msg;
+
+	NUTS_PASS(nng_mqtt_msg_alloc(&msg, 0));
+
+	nng_mqtt_msg_set_packet_type(msg, NNG_MQTT_PUBACK);
+	NUTS_ASSERT(nng_mqtt_msg_get_packet_type(msg) == NNG_MQTT_PUBACK);
+
+	NUTS_PASS(nng_mqtt_msg_encode(msg));
+
+	uint8_t print_buf[1024] = { 0 };
+	nng_mqtt_msg_dump(msg, print_buf, 1024, true);
+	printf("%s\n", print_buf);
 	nng_msg_free(msg);
 }
 
@@ -80,20 +173,47 @@ test_encode_subscribe(void)
 	nng_mqtt_msg_set_packet_type(msg, NNG_MQTT_SUBSCRIBE);
 	NUTS_ASSERT(nng_mqtt_msg_get_packet_type(msg) == NNG_MQTT_SUBSCRIBE);
 
-	size_t              sz        = 2;
-	nng_mqtt_topic_qos *topic_qos = nng_mqtt_topic_qos_array_create(sz);
-	nng_mqtt_topic_qos_array_set(topic_qos, 0, "/nanomq/mqtt/msg/0", 1);
-	nng_mqtt_topic_qos_array_set(topic_qos, 1, "/nanomq/mqtt/msg/1", 1);
+	nng_mqtt_topic_qos topic_qos[] = {
+		{ .qos     = 0,
+		    .topic = { .buf = (uint8_t *) "/nanomq/mqtt/msg/0",
+		        .length     = strlen("/nanomq/mqtt/msg/0") } },
+		{ .qos     = 1,
+		    .topic = { .buf = (uint8_t *) "/nanomq/mqtt/msg/1",
+		        .length     = strlen("/nanomq/mqtt/msg/1") } }
+	};
 
-	nng_mqtt_msg_set_subscribe_topics(msg, topic_qos, sz);
+	nng_mqtt_msg_set_subscribe_topics(
+	    msg, topic_qos, sizeof(topic_qos) / sizeof(nng_mqtt_topic_qos));
 
 	NUTS_PASS(nng_mqtt_msg_encode(msg));
 
 	uint8_t print_buf[1024] = { 0 };
 	nng_mqtt_msg_dump(msg, print_buf, 1024, true);
-	nng_mqtt_topic_qos_array_free(topic_qos, sz);
 
-	// printf("%s\n", print_buf);
+	printf("%s\n", print_buf);
+	nng_msg_free(msg);
+}
+
+void
+test_encode_suback(void)
+{
+	nng_msg *msg;
+
+	NUTS_PASS(nng_mqtt_msg_alloc(&msg, 0));
+
+	nng_mqtt_msg_set_packet_type(msg, NNG_MQTT_SUBACK);
+	NUTS_ASSERT(nng_mqtt_msg_get_packet_type(msg) == NNG_MQTT_SUBACK);
+
+	uint8_t ret_codes[] = { 0, 1, 2, 3 };
+
+	nng_mqtt_msg_set_suback_return_codes(
+	    msg, ret_codes, sizeof(ret_codes) / sizeof(uint8_t));
+
+	NUTS_PASS(nng_mqtt_msg_encode(msg));
+
+	uint8_t print_buf[1024] = { 0 };
+	nng_mqtt_msg_dump(msg, print_buf, 1024, true);
+	printf("%s\n", print_buf);
 	nng_msg_free(msg);
 }
 
@@ -107,19 +227,21 @@ test_encode_unsubscribe(void)
 	nng_mqtt_msg_set_packet_type(msg, NNG_MQTT_UNSUBSCRIBE);
 	NUTS_ASSERT(nng_mqtt_msg_get_packet_type(msg) == NNG_MQTT_UNSUBSCRIBE);
 
-	size_t          sz        = 2;
-	nng_mqtt_topic *topic_qos = nng_mqtt_topic_array_create(sz);
-	nng_mqtt_topic_array_set(topic_qos, 0, "/nanomq/mqtt/1");
-	nng_mqtt_topic_array_set(topic_qos, 1, "/nanomq/mqtt/2");
+	nng_mqtt_topic topic_qos[] = {
+		{ .buf      = (uint8_t *) "/nanomq/mqtt/1",
+		    .length = strlen("/nanomq/mqtt/1") },
+		{ .buf      = (uint8_t *) "/nanomq/mqtt/2",
+		    .length = strlen("/nanomq/mqtt/2") },
+	};
 
-	nng_mqtt_msg_set_unsubscribe_topics(msg, topic_qos, sz);
+	nng_mqtt_msg_set_unsubscribe_topics(
+	    msg, topic_qos, sizeof(topic_qos) / sizeof(nng_mqtt_topic));
 	NUTS_PASS(nng_mqtt_msg_encode(msg));
 
 	uint8_t print_buf[1024] = { 0 };
 	nng_mqtt_msg_dump(msg, print_buf, 1024, true);
-	nng_mqtt_topic_array_free(topic_qos, sz);
 
-	// printf("%s\n", print_buf);
+	printf("%s\n", print_buf);
 	nng_msg_free(msg);
 }
 
@@ -136,7 +258,7 @@ test_encode_disconnect(void)
 
 	uint8_t print_buf[1024] = { 0 };
 	nng_mqtt_msg_dump(msg, print_buf, 1024, true);
-	// printf("%s\n", print_buf);
+	printf("%s\n", print_buf);
 
 	nng_msg_free(msg);
 }
@@ -166,9 +288,9 @@ test_decode_connect(void)
 
 	NUTS_PASS(nng_mqtt_msg_decode(msg));
 
-	// uint8_t print_buf[1024] = { 0 };
-	// nng_mqtt_msg_dump(msg, print_buf, 1024, true);
-	// printf("%s\n", print_buf);
+	uint8_t print_buf[1024] = { 0 };
+	nng_mqtt_msg_dump(msg, print_buf, 1024, true);
+	printf("%s\n", print_buf);
 	nng_msg_free(msg);
 }
 
@@ -231,9 +353,88 @@ test_decode_publish(void)
 
 	NUTS_PASS(nng_mqtt_msg_decode(msg));
 
-	// uint8_t print_buf[2048] = { 0 };
-	// nng_mqtt_msg_dump(msg, print_buf, 2048, true);
-	// printf("%s\n", print_buf);
+	uint8_t print_buf[2048] = { 0 };
+	nng_mqtt_msg_dump(msg, print_buf, 2048, true);
+	printf("%s\n", print_buf);
+
+	nng_msg_free(msg);
+}
+
+void
+test_decode_puback(void)
+{
+	nng_msg *msg;
+
+	uint8_t puback[] = { 0x40, 0x02, 0x01, 0x20 };
+	size_t  sz       = sizeof(puback) / sizeof(uint8_t);
+	nng_mqtt_msg_alloc(&msg, 0);
+
+	nng_msg_header_append(msg, puback, sz - 2);
+
+	nng_msg_append(msg, puback + 2, sz - 2);
+
+	NUTS_PASS(nng_mqtt_msg_decode(msg));
+
+	uint8_t print_buf[1024] = { 0 };
+	nng_mqtt_msg_dump(msg, print_buf, 1024, true);
+	printf("%s\n", print_buf);
+	nng_msg_free(msg);
+}
+
+void
+test_decode_subscribe(void)
+{
+	nng_msg *msg;
+
+	uint8_t subscribe[] = { 0x82, 0x2c, 0x02, 0x10, 0x00, 0x12, 0x2f, 0x6e,
+		0x61, 0x6e, 0x6f, 0x6d, 0x71, 0x2f, 0x6d, 0x71, 0x74, 0x74,
+		0x2f, 0x6d, 0x73, 0x67, 0x2f, 0x30, 0x00, 0x00, 0x12, 0x2f,
+		0x6e, 0x61, 0x6e, 0x6f, 0x6d, 0x71, 0x2f, 0x6d, 0x71, 0x74,
+		0x74, 0x2f, 0x6d, 0x73, 0x67, 0x2f, 0x31, 0x01 };
+
+	size_t sz = sizeof(subscribe) / sizeof(uint8_t);
+	nng_mqtt_msg_alloc(&msg, 0);
+
+	nng_msg_header_append(msg, subscribe, sz - 2);
+
+	nng_msg_append(msg, subscribe + 2, sz - 2);
+
+	NUTS_PASS(nng_mqtt_msg_decode(msg));
+
+	uint8_t print_buf[1024] = { 0 };
+	nng_mqtt_msg_dump(msg, print_buf, 1024, true);
+	printf("%s\n", print_buf);
+
+	uint32_t            count;
+	nng_mqtt_topic_qos *tq =
+	    nng_mqtt_msg_get_subscribe_topics(msg, &count);
+
+	nng_free(tq, count);
+
+	nng_msg_free(msg);
+}
+
+void
+test_decode_unsubscribe(void)
+{
+	nng_msg *msg;
+
+	uint8_t unsubscribe[] = { 0xa2, 0x22, 0x01, 0x10, 0x00, 0x0e, 0x2f,
+		0x6e, 0x61, 0x6e, 0x6f, 0x6d, 0x71, 0x2f, 0x6d, 0x71, 0x74,
+		0x74, 0x2f, 0x31, 0x00, 0x0e, 0x2f, 0x6e, 0x61, 0x6e, 0x6f,
+		0x6d, 0x71, 0x2f, 0x6d, 0x71, 0x74, 0x74, 0x2f, 0x32 };
+
+	size_t sz = sizeof(unsubscribe) / sizeof(uint8_t);
+	nng_mqtt_msg_alloc(&msg, 0);
+
+	nng_msg_header_append(msg, unsubscribe, sz - 2);
+	nng_msg_append(msg, unsubscribe + 2, sz - 2);
+
+	NUTS_PASS(nng_mqtt_msg_decode(msg));
+
+	uint8_t print_buf[1024] = { 0 };
+	nng_mqtt_msg_dump(msg, print_buf, 1024, true);
+	printf("%s\n", print_buf);
 
 	nng_msg_free(msg);
 }
@@ -251,19 +452,28 @@ test_decode_disconnect(void)
 
 	NUTS_PASS(nng_mqtt_msg_decode(msg));
 
-	// uint8_t print_buf[1024] = { 0 };
-	// nng_mqtt_msg_dump(msg, print_buf, 1024, true);
-	// printf("%s\n", print_buf);
+	uint8_t print_buf[1024] = { 0 };
+	nng_mqtt_msg_dump(msg, print_buf, 1024, true);
+	printf("%s\n", print_buf);
 	nng_msg_free(msg);
 }
 
 TEST_LIST = {
+	{ "alloc message", test_alloc },
+	{ "dup message", test_dup },
 	{ "encode connect", test_encode_connect },
+	{ "encode conack", test_encode_connack },
+	{ "encode publish", test_encode_publish },
+	{ "encode puback", test_encode_puback },
 	{ "encode disconnect", test_encode_disconnect },
 	{ "encode subscribe", test_encode_subscribe },
+	{ "encode suback", test_encode_suback },
 	{ "encode unsubscribe", test_encode_unsubscribe },
 	{ "decode connect", test_decode_connect },
+	{ "decode subscribe", test_decode_subscribe },
+	{ "decode unsubscribe", test_decode_unsubscribe },
 	{ "decode disconnect", test_decode_disconnect },
 	{ "decode publish", test_decode_publish },
+	{ "decode puback", test_decode_puback },
 	{ NULL, NULL },
 };
