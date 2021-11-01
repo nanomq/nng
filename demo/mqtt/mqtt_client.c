@@ -71,11 +71,12 @@ print80(const char *prefix, const char *str, size_t len, bool quote)
 static void
 connect_cb(void *arg, nng_msg *ackmsg)
 {
-	char * userarg = (char *)arg;
-	uint8_t status = nng_mqtt_msg_get_conack_return_code(ackmsg);
+	char *  userarg = (char *) arg;
+	uint8_t status  = nng_mqtt_msg_get_conack_return_code(ackmsg);
 	printf("Connected cb. \n"
 	       "  -> Status  [%d]\n"
-		   "  -> Userarg [%s].\n", status, userarg);
+	       "  -> Userarg [%s].\n",
+	    status, userarg);
 
 	// Free ConnAck msg
 	nng_msg_free(ackmsg);
@@ -130,8 +131,9 @@ client_connect(nng_socket *sock, const char *url, bool verbose)
 
 	printf("connected\n");
 
-	// TODO: connmsg would be free when client disconnected
+	// TODO Connmsg would be free when client disconnected
 	// nng_msg_free(connmsg);
+	nng_mqtt_msg_proto_data_free(connmsg);
 
 	return (0);
 }
