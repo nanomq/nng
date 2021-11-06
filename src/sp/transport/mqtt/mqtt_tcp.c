@@ -279,9 +279,6 @@ mqtt_tcptran_pipe_nego_cb(void *arg)
 	} else if (p->gotrxhead < p->wantrxhead) {
 		p->gotrxhead += nni_aio_count(aio);
 	}
-	printf("mqtt_tcptran_pipe_nego_cb gotrx %ld wantrx %ld gottx %ld "
-	       "wanttx %ld.\n",
-	    p->gotrxhead, p->wantrxhead, p->gottxhead, p->wanttxhead);
 
 	if (p->gottxhead < p->wanttxhead) {
 		nni_iov iov;
@@ -314,8 +311,7 @@ mqtt_tcptran_pipe_nego_cb(void *arg)
 	// TODO only deal with CONNACK, so just use rxlen at all time
 	if (p->rxmsg == NULL) {
 		if ((p->rxlen[0] & 0x20) != 0x20) {
-			fprintf(
-			    stderr, "not recv connack [%x].\n", p->rxlen[0]);
+			// fprintf(stderr, "not recv connack [%x].\n", p->rxlen[0]);
 			rv = NNG_EPROTO;
 			goto error;
 		}
@@ -335,7 +331,7 @@ mqtt_tcptran_pipe_nego_cb(void *arg)
 
 		p->wantrxhead = var_int + 1 + pos;
 		if ((rv = (p->wantrxhead <= 4) ? 0 : NNG_EPROTO) != 0) {
-			fprintf(stderr, "wantrxhead error rv[%d].\n", rv);
+			// fprintf(stderr, "wantrxhead error rv[%d].\n", rv);
 			// TODO BUG here
 			goto error;
 		}
@@ -448,7 +444,6 @@ mqtt_tcptran_pipe_recv_cb(void *arg)
 	mqtt_tcptran_pipe *p     = arg;
 	nni_aio *          rxaio = p->rxaio;
 
-	// printf("mqtt_tcptran_pipe_recv_cb %p\n", p);
 	nni_mtx_lock(&p->mtx);
 
 	aio = nni_list_first(&p->recvq);
@@ -534,7 +529,6 @@ mqtt_tcptran_pipe_recv_cb(void *arg)
 			iov.iov_len = 4;
 			iov.iov_buf = &p->txlen;
 			// send it down...
-			printf("PUBRECV\n");
 			nni_aio_set_iov(p->rsaio, 1, &iov);
 			nng_stream_send(p->conn, p->rsaio);
 		}
@@ -556,7 +550,6 @@ mqtt_tcptran_pipe_recv_cb(void *arg)
 		iov.iov_len = 4;
 		iov.iov_buf = &p->txlen;
 		// send it down...
-		printf("PUBCOMP\n");
 		nni_aio_set_iov(p->rpaio, 1, &iov);
 		nng_stream_send(p->conn, p->rpaio);
 	}
@@ -579,7 +572,6 @@ recv_error:
 
 	nni_msg_free(msg);
 	nni_aio_finish_error(aio, rv);
-	printf("mqtt_tcptran_pipe_recv_cb: recv error rv: %d\n", rv);
 	return;
 notify:
 	// nni_pipe_bump_rx(p->npipe, n);
@@ -792,7 +784,7 @@ mqtt_tcptran_pipe_start(
 	rv = nni_dialer_getopt(
 	    ep->ndialer, NNG_OPT_MQTT_CONNMSG, &connmsg, NULL, NNI_TYPE_POINTER);
 	if (!connmsg) {
-		fprintf(stderr, "Connmsg get error [%d] \n", rv);
+		// fprintf(stderr, "Connmsg get error [%d] \n", rv);
 		nni_list_append(&ep->waitpipes, p);
 		mqtt_tcptran_ep_match(ep);
 		mqtt_tcptran_ep_match(ep);
