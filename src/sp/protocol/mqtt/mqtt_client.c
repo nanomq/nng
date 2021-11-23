@@ -315,10 +315,6 @@ mqtt_pipe_init(void *arg, nni_pipe *pipe, void *s)
 	mqtt_pipe_t *p    = arg;
 	mqtt_sock_t *sock = s;
 
-	nni_mtx_lock(&sock->mtx);
-	sock->mqtt_pipe = p;
-	nni_mtx_unlock(&sock->mtx);
-
 	nni_atomic_init_bool(&p->closed);
 	nni_atomic_set_bool(&p->closed, false);
 	nni_atomic_set(&p->next_packet_id, 0);
@@ -338,6 +334,7 @@ mqtt_pipe_init(void *arg, nni_pipe *pipe, void *s)
 	nni_id_map_init(&p->send_unack, 0x0000u, 0xffffu, true);
 	nni_id_map_init(&p->recv_unack, 0x0000u, 0xffffu, true);
 	nni_lmq_init(&p->recv_messages, 128); // FIXME: remove hard code value
+
 	return (0);
 }
 
@@ -365,7 +362,9 @@ mqtt_pipe_start(void *arg)
 	// }
 
 	nni_mtx_lock(&s->mtx);
+	s->mqtt_pipe = p;
 	mqtt_send_start(s);
+	work_timer_schedule(&p->ping_work);
 	nni_mtx_unlock(&s->mtx);
 
 	nni_pipe_recv(p->pipe, &p->recv_aio);
@@ -462,6 +461,8 @@ mqtt_keep_alive_cb(void *arg)
 		nni_list_append(&s->send_queue, &p->ping_work);
 		mqtt_send_start(s);
 	}
+
+	work_timer_schedule(&p->ping_work);
 
 	nni_mtx_unlock(&s->mtx);
 }
@@ -948,7 +949,6 @@ mqtt_send_start(mqtt_sock_t *s)
 				    mqtt_pipe_get_next_packet_id(p);
 				nni_mqtt_msg_set_packet_id(
 				    work->msg, work->packet_id);
-				nni_mqtt_msg_encode(work->msg);
 				NNI_ASSERT(nni_id_get(&p->send_unack,
 				               work->packet_id) == NULL);
 				if (0 !=
@@ -964,15 +964,14 @@ mqtt_send_start(mqtt_sock_t *s)
 				    work->user_aio, NNG_EPROTO);
 				return;
 			}
+
+			nni_mqtt_msg_encode(work->msg);
 		}
 
 		work_set_send(work, packet_type);
 		nni_msg_clone(work->msg);
 		nni_aio_set_msg(&p->send_aio, work->msg);
 		nni_pipe_send(p->pipe, &p->send_aio);
-	} else {
-		// no packet to send, start the ping request timer
-		work_timer_schedule(&p->ping_work);
 	}
 
 	return;
