@@ -663,7 +663,7 @@ nng_dialer_create(nng_dialer *dp, nng_socket sid, const char *addr)
 }
 
 int
-nng_dialer_set_cb(nng_dialer did, void (*cb)(void *, nng_msg *), void *arg)
+nng_dialer_set_cb(nng_dialer did, void * cb)
 {
 	nni_dialer *d;
 	int         rv;
@@ -672,7 +672,7 @@ nng_dialer_set_cb(nng_dialer did, void (*cb)(void *, nng_msg *), void *arg)
 		return (rv);
 	}
 
-	nni_dialer_setcb(d, cb, arg);
+	nni_dialer_setcb(d, cb);
 	return (0);
 }
 

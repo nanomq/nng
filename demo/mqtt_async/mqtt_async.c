@@ -151,13 +151,29 @@ alloc_work(nng_socket sock, uint32_t index)
 
 // Connack message callback function
 static void
-connect_cb(void *arg, nng_msg *msg)
+connect_cb(void *connect_arg, nng_msg *msg)
 {
-	(void) arg;
+	(void) connect_arg;
 	printf(
 	    "Connack status: %d\n", nng_mqtt_msg_get_connack_return_code(msg));
 	nng_msg_free(msg);
 }
+
+// Disconnect message callback function
+static void
+disconnect_cb(void *disconn_arg, nng_msg *msg)
+{
+	(void) disconn_arg;
+	printf("Disconnected\n");
+}
+
+static nng_mqtt_cb usercb = {
+	.name = "usercb",
+	.on_connected = connect_cb,
+	.on_disconnected = disconnect_cb,
+	.connect_arg = "Args", // void *
+	.disconn_arg = "Args", // void *
+};
 
 int
 client(const char *url)
@@ -188,7 +204,7 @@ client(const char *url)
 	nng_mqtt_msg_set_connect_clean_session(msg, true);
 
 	nng_dialer_set_ptr(dialer, NNG_OPT_MQTT_CONNMSG, msg);
-	nng_dialer_set_cb(dialer, connect_cb, NULL);
+	nng_dialer_set_cb(dialer, &usercb);
 	nng_dialer_start(dialer, NNG_FLAG_NONBLOCK);
 
 	for (i = 0; i < nwork; i++) {
@@ -330,7 +346,7 @@ tls_client(const char *url, const char *ca, const char *cert, const char *key,
 	}
 
 	nng_dialer_set_ptr(dialer, NNG_OPT_MQTT_CONNMSG, msg);
-	nng_dialer_set_cb(dialer, connect_cb, NULL);
+	nng_dialer_set_cb(dialer, connect_cb);
 	nng_dialer_start(dialer, NNG_FLAG_NONBLOCK);
 
 	for (i = 0; i < nwork; i++) {
