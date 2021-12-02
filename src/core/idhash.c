@@ -339,7 +339,7 @@ void
 nni_id_show_cb(nni_msg* msg)
 {
 	NNI_ARG_UNUSED(msg);
-	debug_msg("message has an address: %p", msg);
+	log_trace("message has an address: %p", msg);
 }
 
 // this function iterates through the the idhash table, and store the entries in a linked list
@@ -354,7 +354,7 @@ nni_id_iterate(nni_id_map *m, void (func_cb)(nni_msg*))
 			func_cb(m->id_entries[i].val);
 		}
 	}
-	//debug_msg("This id_map has %d entries.\n", count);
+	//log_trace("This id_map has %d entries.\n", count);
 }
 
 void*

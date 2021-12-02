@@ -20,7 +20,7 @@
 #include <nng/supplemental/tls/tls.h>
 #include <nng/transport/ws/nmq_websocket.h>
 
-#include "nng/nng_debug.h"
+#include "nng/nng_log.h"
 #include "nng/protocol/mqtt/mqtt.h"
 #include "nng/protocol/mqtt/mqtt_parser.h"
 
@@ -110,12 +110,12 @@ wstran_pipe_recv_cb(void *arg)
 	msg = nni_aio_get_msg(raio);
 	ptr = nni_msg_body(msg);
 	p->gotrxhead += nni_msg_len(msg);
-	debug_msg("#### wstran_pipe_recv_cb got %ld msg: %p %x %ld",
+	log_trace("#### wstran_pipe_recv_cb got %ld msg: %p %x %ld",
 	    p->gotrxhead, ptr, *ptr, nni_msg_len(msg));
 	// first we collect complete Fixheader
 	if (p->tmp_msg == NULL && p->gotrxhead > 0) {
 		if ((rv = nni_msg_alloc(&p->tmp_msg, 0)) != 0) {
-			debug_syslog("mem error %ld\n", (size_t) len);
+			log_trace("mem error %ld\n", (size_t) len);
 			goto reset;
 		}
 	}
@@ -380,7 +380,7 @@ wstran_pipe_send(void *arg, nni_aio *aio)
 				// first time send this msg
 				pid = nni_pipe_inc_packetid(pipe);
 				// store msg for qos retrying
-				debug_msg(
+				log_trace(
 				    "* processing QoS pubmsg with pipe: %p *",
 				    p);
 				nni_msg_clone(msg);
@@ -445,7 +445,7 @@ wstran_pipe_stop(void *arg)
 static int
 wstran_pipe_init(void *arg, nni_pipe *pipe)
 {
-	debug_msg("************wstran_pipe_init************");
+	log_trace("************wstran_pipe_init************");
 	ws_pipe *p = arg;
 
 	nni_pipe_set_conn_param(pipe, p->ws_param);
@@ -717,7 +717,7 @@ ws_pipe_start(ws_pipe *pipe, nng_stream *conn)
 {
 	NNI_ARG_UNUSED(conn);
 	ws_pipe *p = pipe;
-	debug_msg("ws_pipe_start!");
+	log_trace("ws_pipe_start!");
 
 	nng_stream_recv(p->ws, p->rxaio);
 }

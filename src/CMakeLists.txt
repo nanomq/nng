@@ -8,8 +8,8 @@
 # found online at https://opensource.org/licenses/MIT.
 #
 
-nng_sources(nng.c nng_legacy.c)
-nng_headers(nng/nng.h)
+nng_sources(nng.c nng_legacy.c nng_log.c)
+nng_headers(nng/nng.h nng/nng_log.h)
 
 include_directories(${CMAKE_SOURCE_DIR}/nanolib/include)
 include_directories(${CMAKE_SOURCE_DIR}/nanomq/include)

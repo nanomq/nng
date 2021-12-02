@@ -9,7 +9,7 @@
 
 #include "nng/protocol/mqtt/mqtt_parser.h"
 #include "core/nng_impl.h"
-#include "nng/nng_debug.h"
+#include "nng/nng_log.h"
 #include "nng/protocol/mqtt/mqtt.h"
 
 #include <conf.h>
@@ -415,7 +415,7 @@ conn_handler(uint8_t *packet, conn_param *cparam)
 	    (char *) copy_utf8_str(packet, &pos, &len_of_str);
 	cparam->pro_name.len = len_of_str;
 	rv                   = len_of_str < 0 ? 1 : 0;
-	debug_msg("pro_name: %s", cparam->pro_name.body);
+	log_trace("pro_name: %s", cparam->pro_name.body);
 	// protocol ver
 	cparam->pro_ver = packet[pos];
 	pos++;
@@ -425,7 +425,7 @@ conn_handler(uint8_t *packet, conn_param *cparam)
 	cparam->will_flag   = (cparam->con_flag & 0x04) >> 2;
 	cparam->will_qos    = (cparam->con_flag & 0x18) >> 3;
 	cparam->will_retain = (cparam->con_flag & 0x20) >> 5;
-	debug_msg("conn flag:%x", cparam->con_flag);
+	log_trace("conn flag:%x", cparam->con_flag);
 	pos++;
 	// keepalive
 	NNI_GET16(packet + pos, tmp);
@@ -433,10 +433,10 @@ conn_handler(uint8_t *packet, conn_param *cparam)
 	pos += 2;
 	// properties
 	if (cparam->pro_ver == PROTOCOL_VERSION_v5) {
-		debug_msg("MQTT 5 Properties");
+		log_trace("MQTT 5 Properties");
 		len_of_properties   = (uint32_t) get_var_integer(packet, &pos);
 		uint32_t target_pos = pos + len_of_properties;
-		debug_msg("propertyLen in variable [%d]", len_of_properties);
+		log_trace("propertyLen in variable [%d]", len_of_properties);
 
 		// parse property in variable header
 		if (len_of_properties > 0) {
@@ -444,42 +444,42 @@ conn_handler(uint8_t *packet, conn_param *cparam)
 				property_id = packet[pos++];
 				switch (property_id) {
 				case SESSION_EXPIRY_INTERVAL:
-					debug_msg("SESSION_EXPIRY_INTERVAL");
+					log_trace("SESSION_EXPIRY_INTERVAL");
 					NNI_GET32(packet + pos,
 					    cparam->session_expiry_interval);
 					pos += 4;
 					break;
 				case RECEIVE_MAXIMUM:
-					debug_msg("RECEIVE_MAXIMUM");
+					log_trace("RECEIVE_MAXIMUM");
 					NNI_GET16(
 					    packet + pos, cparam->rx_max);
 					pos += 2;
 					break;
 				case MAXIMUM_PACKET_SIZE:
-					debug_msg("MAXIMUM_PACKET_SIZE");
+					log_trace("MAXIMUM_PACKET_SIZE");
 					NNI_GET32(packet + pos,
 					    cparam->max_packet_size);
 					pos += 4;
 					break;
 				case TOPIC_ALIAS_MAXIMUM:
-					debug_msg("TOPIC_ALIAS_MAXIMUM");
+					log_trace("TOPIC_ALIAS_MAXIMUM");
 					NNI_GET16(packet + pos,
 					    cparam->topic_alias_max);
 					pos += 2;
 					break;
 				case REQUEST_RESPONSE_INFORMATION:
-					debug_msg(
+					log_trace(
 					    "REQUEST_RESPONSE_INFORMATION");
 					cparam->req_resp_info = packet[pos++];
 					break;
 				case REQUEST_PROBLEM_INFORMATION:
-					debug_msg(
+					log_trace(
 					    "REQUEST_PROBLEM_INFORMATION");
 					cparam->req_problem_info =
 					    packet[pos++];
 					break;
 				case USER_PROPERTY:
-					debug_msg("USER_PROPERTY");
+					log_trace("USER_PROPERTY");
 					// key
 					cparam->user_property.key =
 					    (char *) copy_utf8_str(
@@ -496,7 +496,7 @@ conn_handler(uint8_t *packet, conn_param *cparam)
 					rv = len_of_str < 0 ? 1 : 0;
 					break;
 				case AUTHENTICATION_METHOD:
-					debug_msg("AUTHENTICATION_METHOD");
+					log_trace("AUTHENTICATION_METHOD");
 					cparam->auth_method.body =
 					    (char *) copy_utf8_str(
 					        packet, &pos, &len_of_str);
@@ -505,7 +505,7 @@ conn_handler(uint8_t *packet, conn_param *cparam)
 					len_of_str              = 0;
 					break;
 				case AUTHENTICATION_DATA:
-					debug_msg("AUTHENTICATION_DATA");
+					log_trace("AUTHENTICATION_DATA");
 					cparam->auth_data.body = copy_utf8_str(
 					    packet, &pos, &len_of_str);
 					rv = len_of_str < 0 ? 1 : 0;
@@ -517,14 +517,13 @@ conn_handler(uint8_t *packet, conn_param *cparam)
 				if (pos == target_pos) {
 					break;
 				} else if (pos > target_pos) {
-					debug_msg("ERROR: protocol error");
+					log_trace("ERROR: protocol error");
 					return PROTOCOL_ERROR;
 				}
 			}
 		}
 	}
-	debug_msg("pos after property: [%d]", pos);
-
+	log_trace("pos after property: [%d]", pos);
 	// payload client_id
 	cparam->clientid.body =
 	    (char *) copy_utf8_str(packet, &pos, &len_of_str);
@@ -539,14 +538,13 @@ conn_handler(uint8_t *packet, conn_param *cparam)
 	} else if (len_of_str < 0) {
 		return (1);
 	}
-	debug_msg("clientid: [%s] [%d]", cparam->clientid.body, len_of_str);
-
+	log_trace("clientid: [%s] [%d]", cparam->clientid.body, len_of_str);
 	// will topic
 	if (cparam->will_flag != 0) {
 		if (cparam->pro_ver == PROTOCOL_VERSION_v5) {
 			len_of_properties   = get_var_integer(packet, &pos);
 			uint32_t target_pos = pos + len_of_properties;
-			debug_msg(
+			log_trace(
 			    "propertyLen in payload [%d]", len_of_properties);
 
 			// parse property in variable header
@@ -555,7 +553,7 @@ conn_handler(uint8_t *packet, conn_param *cparam)
 					property_id = packet[pos++];
 					switch (property_id) {
 					case WILL_DELAY_INTERVAL:
-						debug_msg(
+						log_trace(
 						    "WILL_DELAY_INTERVAL");
 						NNI_GET32(packet + pos,
 						    cparam
@@ -563,14 +561,14 @@ conn_handler(uint8_t *packet, conn_param *cparam)
 						pos += 4;
 						break;
 					case PAYLOAD_FORMAT_INDICATOR:
-						debug_msg("PAYLOAD_FORMAT_"
+						log_trace("PAYLOAD_FORMAT_"
 						          "INDICATOR");
 						cparam
 						    ->payload_format_indicator =
 						    packet[pos++];
 						break;
 					case MESSAGE_EXPIRY_INTERVAL:
-						debug_msg(
+						log_trace(
 						    "MESSAGE_EXPIRY_INTERVAL");
 						NNI_GET32(packet + pos,
 						    cparam
@@ -578,7 +576,7 @@ conn_handler(uint8_t *packet, conn_param *cparam)
 						pos += 4;
 						break;
 					case CONTENT_TYPE:
-						debug_msg("CONTENT_TYPE");
+						log_trace("CONTENT_TYPE");
 						cparam->content_type.body =
 						    (char *) copy_utf8_str(
 						        packet, &pos,
@@ -586,13 +584,13 @@ conn_handler(uint8_t *packet, conn_param *cparam)
 						cparam->content_type.len =
 						    len_of_str;
 						rv = len_of_str < 0 ? 1 : 0;
-						debug_msg(
+						log_trace(
 						    "content type: %s %d",
 						    cparam->content_type.body,
 						    rv);
 						break;
 					case RESPONSE_TOPIC:
-						debug_msg("RESPONSE_TOPIC");
+						log_trace("RESPONSE_TOPIC");
 						cparam->resp_topic.body =
 						    (char *) copy_utf8_str(
 						        packet, &pos,
@@ -600,24 +598,24 @@ conn_handler(uint8_t *packet, conn_param *cparam)
 						cparam->resp_topic.len =
 						    len_of_str;
 						rv = len_of_str < 0 ? 1 : 0;
-						debug_msg("resp topic: %s %d",
+						log_trace("resp topic: %s %d",
 						    cparam->resp_topic.body,
 						    rv);
 						break;
 					case CORRELATION_DATA:
-						debug_msg("CORRELATION_DATA");
+						log_trace("CORRELATION_DATA");
 						cparam->corr_data.body =
 						    copy_utf8_str(packet, &pos,
 						        &len_of_str);
 						cparam->corr_data.len =
 						    len_of_str;
 						rv = len_of_str < 0 ? 1 : 0;
-						debug_msg("corr_data: %s %d",
+						log_trace("corr_data: %s %d",
 						    cparam->corr_data.body,
 						    rv);
 						break;
 					case USER_PROPERTY:
-						debug_msg("USER_PROPERTY");
+						log_trace("USER_PROPERTY");
 						// key
 						cparam->payload_user_property
 						    .key =
@@ -643,7 +641,7 @@ conn_handler(uint8_t *packet, conn_param *cparam)
 					if (pos == target_pos) {
 						break;
 					} else if (pos > target_pos) {
-						debug_msg(
+						log_trace(
 						    "ERROR: protocol error");
 						return PROTOCOL_ERROR;
 					}
@@ -654,13 +652,13 @@ conn_handler(uint8_t *packet, conn_param *cparam)
 		    (char *) copy_utf8_str(packet, &pos, &len_of_str);
 		cparam->will_topic.len = len_of_str;
 		rv                     = len_of_str < 0 ? 1 : 0;
-		debug_msg("will_topic: %s %d", cparam->will_topic.body, rv);
+		log_trace("will_topic: %s %d", cparam->will_topic.body, rv);
 		// will msg
 		cparam->will_msg.body =
 		    (char *) copy_utf8_str(packet, &pos, &len_of_str);
 		cparam->will_msg.len = len_of_str;
 		rv                   = len_of_str < 0 ? 1 : 0;
-		debug_msg("will_msg: %s %d", cparam->will_msg.body, rv);
+		log_trace("will_msg: %s %d", cparam->will_msg.body, rv);
 	}
 	// username
 	if ((cparam->con_flag & 0x80) > 0) {
@@ -668,7 +666,7 @@ conn_handler(uint8_t *packet, conn_param *cparam)
 		    (char *) copy_utf8_str(packet, &pos, &len_of_str);
 		cparam->username.len = len_of_str;
 		rv                   = len_of_str < 0 ? 1 : 0;
-		debug_msg(
+		log_trace(
 		    "username: %s %d", cparam->username.body, len_of_str);
 	}
 	// password
@@ -677,12 +675,12 @@ conn_handler(uint8_t *packet, conn_param *cparam)
 		    copy_utf8_str(packet, &pos, &len_of_str);
 		cparam->password.len = len_of_str;
 		rv                   = len_of_str < 0 ? 1 : 0;
-		debug_msg(
+		log_trace(
 		    "password: %s %d", cparam->password.body, len_of_str);
 	}
 	// what if rv = 0?
 	if (len + len_of_var + 1 != pos) {
-		debug_msg("ERROR in connect handler");
+		log_trace("ERROR in connect handler");
 	}
 	return rv;
 }
@@ -745,7 +743,7 @@ conn_param_free(conn_param *cparam)
 	if (nni_atomic_dec_nv(&cparam->refcnt) != 0) {
 		return;
 	}
-	debug_msg("destroy conn param");
+	log_trace("destroy conn param");
 	nng_free(cparam->pro_name.body, cparam->pro_name.len);
 	nng_free(cparam->clientid.body, cparam->clientid.len);
 	nng_free(cparam->will_topic.body, cparam->will_topic.len);
@@ -886,7 +884,7 @@ verify_connect(conn_param *cparam, conf *conf)
 	char *password = (char *) cparam->password.body;
 
 	if (conf->auths.count == 0 || conf->allow_anonymous == true) {
-		debug_msg("WARNING: no valid entry in "
+		log_trace("WARNING: no valid entry in "
 		          "etc/nanomq_auth_username.conf.");
 		return 0;
 	}
@@ -987,7 +985,7 @@ nano_msg_get_subtopic(nni_msg *msg, nano_pipe_db *root, conn_param *cparam)
 
 		if (len_of_topic != 0) {
 
-			debug_msg("The current process topic is %s",
+			log_trace("The current process topic is %s",
 			    payload_ptr + bpos + 2);
 			iter = root;
 			while (iter) {
@@ -1041,7 +1039,7 @@ nano_msg_get_subtopic(nni_msg *msg, nano_pipe_db *root, conn_param *cparam)
 		}
 		db->qos  = *(payload_ptr + bpos);
 		db->next = NULL;
-		debug_msg("sub topic: %s qos : %x\n", db->topic, db->qos);
+		log_trace("sub topic: %s qos : %x\n", db->topic, db->qos);
 		bpos += 1;
 	}
 

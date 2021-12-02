@@ -9,7 +9,7 @@
 //
 
 #include "core/nng_impl.h"
-#include "nng/nng_debug.h"
+#include "nng/nng_log.h"
 #include <string.h>
 
 struct nni_aio_expire_q {
@@ -389,7 +389,7 @@ nni_aio_schedule(nni_aio *aio, nni_aio_cancel_fn cancel, void *data)
 	}
 
 #if defined(DEBUG)
-	debug_msg("aio->a_cancel_fn NULL %d?", (aio->a_cancel_fn == NULL));
+	log_trace("aio->a_cancel_fn NULL %d?", (aio->a_cancel_fn == NULL));
 #else
 
 	NNI_ASSERT(aio->a_cancel_fn == NULL);
@@ -462,21 +462,21 @@ nni_aio_finish_impl(
 void
 nni_aio_finish(nni_aio *aio, int result, size_t count)
 {
-	debug_msg("aio finish");
+	log_trace("aio finish");
 	nni_aio_finish_impl(aio, result, count, NULL, false);
 }
 
 void
 nni_aio_finish_sync(nni_aio *aio, int result, size_t count)
 {
-	debug_msg("nni_aio_finish_sync");
+	log_trace("nni_aio_finish_sync");
 	nni_aio_finish_impl(aio, result, count, NULL, true);
 }
 
 void
 nni_aio_finish_error(nni_aio *aio, int result)
 {
-	debug_msg("nni_aio_finish_error");
+	log_trace("nni_aio_finish_error");
 	nni_aio_finish_impl(aio, result, 0, NULL, false);
 }
 
