@@ -579,7 +579,7 @@ nng_dialer_create(nng_dialer *dp, nng_socket sid, const char *addr)
 }
 
 int
-nng_dialer_set_cb(nng_dialer did, void * cb)
+nng_dialer_set_cb(nng_dialer did, void *cb)
 {
 	nni_dialer *d;
 	int         rv;
@@ -1965,6 +1965,12 @@ nng_mqtt_msg_set_connect_will_retain(nng_msg *msg, bool will_retain)
 	nni_mqtt_msg_set_connect_will_retain(msg, will_retain);
 }
 
+void
+nng_mqtt_msg_set_connect_will_qos(nng_msg *msg, uint8_t will_qos)
+{
+	nni_mqtt_msg_set_connect_will_qos(msg, will_qos);
+}
+
 bool
 nng_mqtt_msg_get_connect_clean_session(nng_msg *msg)
 {
@@ -1975,6 +1981,12 @@ bool
 nng_mqtt_msg_get_connect_will_retain(nng_msg *msg)
 {
 	return nni_mqtt_msg_get_connect_will_retain(msg);
+}
+
+uint8_t
+nng_mqtt_msg_get_connect_will_qos(nng_msg *msg)
+{
+	return nni_mqtt_msg_get_connect_will_qos(msg);
 }
 
 void
