@@ -12,11 +12,13 @@ find_package(nng CONFIG REQUIRED)
 
 find_package(Threads)
 
+add_subdirectory(nftp-codec)
+include_directories(${CMAKE_CURRENT_SOURCE_DIR}/nftp-codec)
+
 include_directories(${CMAKE_CURRENT_SOURCE_DIR})
 
 add_executable(mqtt_nftp_recver mqtt_nftp_recver.c)
 add_executable(mqtt_nftp_sender mqtt_nftp_sender.c)
-target_link_libraries(mqtt_nftp_recver nng nftp-codec hashtable)
-target_link_libraries(mqtt_nftp_sender nng nftp-codec hashtable)
-target_link_libraries(mqtt_nftp_recver ${CMAKE_THREAD_LIBS_INIT})
-target_link_libraries(mqtt_nftp_sender ${CMAKE_THREAD_LIBS_INIT})
+
+target_link_libraries(mqtt_nftp_recver nng nftp-codec hashtable ${CMAKE_THREAD_LIBS_INIT})
+target_link_libraries(mqtt_nftp_sender nng nftp-codec hashtable ${CMAKE_THREAD_LIBS_INIT})
