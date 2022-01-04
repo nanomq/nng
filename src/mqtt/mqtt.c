@@ -88,6 +88,12 @@ nni_mqtt_msg_set_packet_id(nni_msg *msg, uint16_t packet_id)
 	case NNG_MQTT_SUBSCRIBE:
 		proto_data->var_header.subscribe.packet_id = packet_id;
 		break;
+	case NNG_MQTT_UNSUBACK:
+		proto_data->var_header.unsuback.packet_id = packet_id;
+		break;
+	case NNG_MQTT_UNSUBSCRIBE:
+		proto_data->var_header.unsubscribe.packet_id = packet_id;
+		break;
 	default:
 		// logic error
 		NNI_ASSERT(false);
@@ -113,6 +119,10 @@ nni_mqtt_msg_get_packet_id(nni_msg *msg)
 		return proto_data->var_header.suback.packet_id;
 	case NNG_MQTT_SUBSCRIBE:
 		return proto_data->var_header.subscribe.packet_id;
+	case NNG_MQTT_UNSUBACK:
+		return proto_data->var_header.unsuback.packet_id;
+	case NNG_MQTT_UNSUBSCRIBE:
+		return proto_data->var_header.unsubscribe.packet_id;
 	default:
 		// logic error
 		NNI_ASSERT(false);
