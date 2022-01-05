@@ -49,9 +49,8 @@ main(const int argc, const char **argv)
 	nng_socket sock;
 	nftp_proto_init();
 
-	int         rv          = 0;
-
-	const char *url         = "mqtt-tcp://0.0.0.0:1883";
+	const char *url = "mqtt-tcp://127.0.0.1:1883";
+	// const char *url = "mqtt-tcp://192.168.23.105:1885";
 
 	client_connect(&sock, url);
 	nng_msleep(1000);
@@ -71,6 +70,17 @@ mqtt_nftp_sender_start(nng_socket sock, char * fname)
 	uint8_t * data;
 	size_t    datasz;
 
+	// nng-mqtt sub for recving ack
+	nng_mqtt_topic_qos subscriptions[] = {
+		{
+			.qos   = 1,
+			.topic = {
+				.buf    = nftp_topic_recver,
+				.length = strlen(nftp_topic_recver)
+			}
+		},
+	};
+
 	// nftp sender register
 	nftp_proto_register(fname, test_log,
 			(void *)"Demo transfer finished.", NFTP_SENDER);
@@ -82,16 +92,6 @@ mqtt_nftp_sender_start(nng_socket sock, char * fname)
 	client_publish(sock, nftp_topic_sender, data, datasz, 1);
 	test_log("Send NFTP_HELLO");
 
-	// nng-mqtt sub for recving ack
-	nng_mqtt_topic_qos subscriptions[] = {
-		{
-			.qos   = 1,
-			.topic = {
-				.buf    = nftp_topic_recver,
-				.length = strlen(nftp_topic_recver)
-			}
-		},
-	};
 	client_subscribe(sock, subscriptions, 1);
 }
 
@@ -146,11 +146,8 @@ client_connect(nng_socket *sock, const char *url)
 	nng_mqtt_msg_set_packet_type(connmsg, NNG_MQTT_CONNECT);
 	nng_mqtt_msg_set_connect_proto_version(connmsg, 4);
 	nng_mqtt_msg_set_connect_keep_alive(connmsg, 60);
-	nng_mqtt_msg_set_connect_user_name(connmsg, "nng_mqtt_client");
-	nng_mqtt_msg_set_connect_password(connmsg, "secrets");
 	nng_mqtt_msg_set_connect_will_msg(connmsg, "bye-bye", strlen("bye-bye"));
 	nng_mqtt_msg_set_connect_will_topic(connmsg, "will_topic");
-	nng_mqtt_msg_set_connect_client_id(connmsg, "nng_mqtt_client");
 	nng_mqtt_msg_set_connect_clean_session(connmsg, true);
 
 	uint8_t buff[1024] = { 0 };
@@ -214,12 +211,16 @@ client_subscribe(nng_socket sock, nng_mqtt_topic_qos *subscriptions, int count)
 			test_log("Recv NFTP_ACK");
 			nftp_file_blocks(FILENAME, &blocks);
 			for (int i=0; i<blocks; ++i) {
-				nftp_proto_maker(FILENAME, NFTP_TYPE_FILE, i, &payload, &payload_len);
+				if (0 != nftp_proto_maker(FILENAME, NFTP_TYPE_FILE, i, &payload, &payload_len)) {
+					fatal("nftp_proto_maker", rv);
+				}
 				client_publish(sock, nftp_topic_sender, payload, payload_len, 1);
+				nng_msleep(10);
 				test_log("SEND NFTP_FILE/END");
+				free(payload);
 			}
 		}
-		printf("Send Done.");
+		printf("Send Done.\n");
 
 		nng_msg_free(msg);
 	} while(0);

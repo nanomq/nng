@@ -49,9 +49,8 @@ main(const int argc, const char **argv)
 	nng_socket sock;
 	nftp_proto_init();
 
-	const char *exe = argv[0];
-
-	const char *url         = "mqtt-tcp://0.0.0.0:1883";
+	const char *url = "mqtt-tcp://127.0.0.1:1883";
+	// const char *url = "mqtt-tcp://192.168.23.105:1885";
 
 	client_connect(&sock, url);
 	nng_msleep(1000);
@@ -139,11 +138,8 @@ client_connect(nng_socket *sock, const char *url)
 	nng_mqtt_msg_set_packet_type(connmsg, NNG_MQTT_CONNECT);
 	nng_mqtt_msg_set_connect_proto_version(connmsg, 4);
 	nng_mqtt_msg_set_connect_keep_alive(connmsg, 60);
-	nng_mqtt_msg_set_connect_user_name(connmsg, "nng_mqtt_client");
-	nng_mqtt_msg_set_connect_password(connmsg, "secrets");
 	nng_mqtt_msg_set_connect_will_msg(connmsg, "bye-bye", strlen("bye-bye"));
 	nng_mqtt_msg_set_connect_will_topic(connmsg, "will_topic");
-	nng_mqtt_msg_set_connect_client_id(connmsg, "nng_mqtt_client");
 	nng_mqtt_msg_set_connect_clean_session(connmsg, true);
 
 	uint8_t buff[1024] = { 0 };
