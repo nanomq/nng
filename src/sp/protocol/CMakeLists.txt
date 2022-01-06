@@ -16,6 +16,5 @@ add_subdirectory(pair1)
 add_subdirectory(pipeline0)
 add_subdirectory(pubsub0)
 add_subdirectory(reqrep0)
-add_subdirectory(mqtt)
 add_subdirectory(survey0)
 

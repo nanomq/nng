@@ -49,7 +49,9 @@
 #include "core/url.h"
 
 // transport needs to come after url
-#include "mqtt/mqtt.h"
+#include "mqtt/core/mqtt.h"
+#include "mqtt/transport.h"
+
 #include "sp/transport.h"
 // These have to come after the others - particularly transport.h
 

@@ -53,6 +53,7 @@ nni_init_helper(void)
 	nni_dialer_sys_init();
 	nni_pipe_sys_init();
 	nni_sp_tran_sys_init();
+	nni_mqtt_tran_sys_init();
 
 	return (0);
 }
@@ -82,6 +83,7 @@ nni_fini(void)
 		}
 		nni_mtx_unlock(&nni_init_mtx);
 	}
+	nni_mqtt_tran_sys_fini();
 	nni_sp_tran_sys_fini();
 	nni_tls_sys_fini();
 	nni_pipe_sys_fini();
