@@ -160,7 +160,8 @@ connect_cb(void *connect_arg, nng_msg *msg)
 	nng_socket sock     = *(nng_socket *) connect_arg;
 	uint8_t    ret_code = nng_mqtt_msg_get_connack_return_code(msg);
 	printf("%s: %s(%d)\n", __FUNCTION__,
-	    ret_code == 0 ? "connection established" : "connect failed", ret_code);
+	    ret_code == 0 ? "connection established" : "connect failed",
+	    ret_code);
 
 	nng_msg_free(msg);
 	msg = NULL;
@@ -472,6 +473,11 @@ main(int argc, char **argv)
 			usage();
 			exit(1);
 		}
+	}
+
+	if (url == NULL) {
+		url = "mqtt-tcp://broker.emqx.io:1883";
+		printf("set default url: '%s'\n", url);
 	}
 
 	if (enable_ssl) {

@@ -2,7 +2,7 @@
 
 #include "nng/nng.h"
 
-#include "mqtt.h"
+#include "mqtt_msg.h"
 #include "nuts.h"
 
 #define MQTT_MSG_DUMP 0

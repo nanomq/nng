@@ -15,7 +15,5 @@ add_subdirectory(ipc)
 add_subdirectory(tcp)
 add_subdirectory(tls)
 add_subdirectory(ws)
-add_subdirectory(mqtt)
-add_subdirectory(mqtts)
 add_subdirectory(zerotier)
 
