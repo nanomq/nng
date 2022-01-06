@@ -10,6 +10,6 @@
 #  Transports.
 nng_directory(transport)
 
-add_subdirectory(mqtt)
-add_subdirectory(mqtts)
+add_subdirectory(tcp)
+add_subdirectory(tls)
 
