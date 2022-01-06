@@ -1,5 +1,5 @@
-#ifndef MQTT_MQTT_H
-#define MQTT_MQTT_H
+#ifndef NNG_SUPPLEMENTAL_MQTT_MQTT_MSG_H
+#define NNG_SUPPLEMENTAL_MQTT_MQTT_MSG_H
 
 // #include "mqtt_codec.h"
 #ifdef __cplusplus
@@ -13,7 +13,7 @@ extern "C" {
 #endif
 
 #include "core/nng_impl.h"
-
+#include "nng/mqtt/mqtt_client.h"
 #include "nng/nng.h"
 
 #define MQTT_VERSION_3_1 3

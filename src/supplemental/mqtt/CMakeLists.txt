@@ -16,9 +16,10 @@ nng_check_sym(strcasecmp string.h NNG_HAVE_STRCASECMP)
 nng_check_sym(strncasecmp string.h NNG_HAVE_STRNCASECMP)
 
 nng_sources(
+   mqtt_public.c
    mqtt_codec.c
-   mqtt.c     
-   mqtt.h
+   mqtt_msg.c
+   mqtt_msg.h
 )
 
 nng_test(mqtt_test)

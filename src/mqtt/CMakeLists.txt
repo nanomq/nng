@@ -9,7 +9,6 @@
 
 nng_directory(mqtt)
 
-add_subdirectory(core)
 add_subdirectory(protocol)
 add_subdirectory(transport)
 

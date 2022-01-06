@@ -14,6 +14,7 @@
 #include <string.h>
 
 #include "core/nng_impl.h"
+#include "supplemental/mqtt/mqtt_msg.h"
 #include "nng/mqtt/mqtt_client.h"
 #include "nng/supplemental/tls/tls.h"
 
