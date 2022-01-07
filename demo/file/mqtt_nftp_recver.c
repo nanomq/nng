@@ -41,7 +41,7 @@ int mqtt_nftp_recver_start(nng_socket, char *);
 char * nftp_topic_sender = "sender----recver";
 char * nftp_topic_recver = "recver----sender";
 
-int test_log(void * t) {printf("%s\n", t); return 0;}
+static int test_log(void * t) {printf("%s\n", t); return 0;}
 
 int
 main(const int argc, const char **argv)
@@ -73,6 +73,7 @@ mqtt_nftp_recver_start(nng_socket sock, char * fname)
 	// nftp sender register
 	nftp_proto_register(fname, test_log,
 			(void *)"Demo transfer finished.", NFTP_RECVER);
+	nftp_proto_register("*", NULL, NULL, NFTP_RECVER);
 
 	// nng-mqtt sub for recving ack
 	nng_mqtt_topic_qos subscriptions[] = {
@@ -196,15 +197,15 @@ client_subscribe(nng_socket sock, nng_mqtt_topic_qos *subscriptions, int count)
 
 		payload = nng_mqtt_msg_get_publish_payload(msg, &payload_len);
 
-		// print80("Received: ", (char *) payload, payload_len, true);
+		// nftp protocol handler
 		rv = nftp_proto_handler(payload, payload_len, &retpayload, &retpayload_len);
 		if (rv == 0) {
 			if (retpayload != NULL && retpayload_len != 0) {
-				test_log("Recved NFTP_HELLO");
+				printf("Recved NFTP_HELLO\n");
 				client_publish(sock, nftp_topic_recver, retpayload, retpayload_len, 1);
-				test_log("Sent NFTP_ACK");
+				printf("Sent NFTP_ACK\n");
 			} else {
-				test_log("Recved NFTP_FILE/END");
+				printf("Recved NFTP_FILE/END\n");
 			}
 		}
 

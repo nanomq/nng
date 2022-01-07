@@ -41,6 +41,8 @@ int mqtt_nftp_sender_start(nng_socket, char *);
 char * nftp_topic_sender = "sender----recver";
 char * nftp_topic_recver = "recver----sender";
 
+char * topic_files = "files";
+
 static int test_log(void * t) { printf("%s\n", (char *)t); return 0;}
 
 int
@@ -67,9 +69,6 @@ main(const int argc, const char **argv)
 int
 mqtt_nftp_sender_start(nng_socket sock, char * fname)
 {
-	uint8_t * data;
-	size_t    datasz;
-
 	// nng-mqtt sub for recving ack
 	nng_mqtt_topic_qos subscriptions[] = {
 		{
@@ -79,20 +78,16 @@ mqtt_nftp_sender_start(nng_socket sock, char * fname)
 				.length = strlen(nftp_topic_recver)
 			}
 		},
+		{
+			.qos  = 1,
+			.topic = {
+				.buf    = topic_files,
+				.length = strlen(topic_files),
+			}
+		},
 	};
 
-	// nftp sender register
-	nftp_proto_register(fname, test_log,
-			(void *)"Demo transfer finished.", NFTP_SENDER);
-
-	// For sender
-	nftp_proto_send_start(fname);
-	nftp_proto_maker(fname, NFTP_TYPE_HELLO, 0, &data, &datasz);
-
-	client_publish(sock, nftp_topic_sender, data, datasz, 1);
-	test_log("Send NFTP_HELLO");
-
-	client_subscribe(sock, subscriptions, 1);
+	client_subscribe(sock, subscriptions, 2);
 }
 
 nng_mqtt_cb user_cb = {
@@ -187,13 +182,18 @@ client_subscribe(nng_socket sock, nng_mqtt_topic_qos *subscriptions, int count)
 	nng_msg_free(submsg);
 
 	printf("Start receiving loop:\n");
-	do {
+	while (1) {
 		nng_msg *msg;
 		int rv;
 		uint8_t *payload;
 		uint32_t payload_len;
 		uint8_t *retpayload;
 		uint32_t retpayload_len;
+		char     topic[40];
+		uint32_t topic_len;
+		uint8_t *data;
+		size_t   datasz;
+		char    *buf;
 
 		if ((rv = nng_recvmsg(sock, &msg, 0)) != 0) {
 			fatal("nng_recvmsg", rv);
@@ -203,27 +203,51 @@ client_subscribe(nng_socket sock, nng_mqtt_topic_qos *subscriptions, int count)
 		assert(nng_mqtt_msg_get_packet_type(msg) == NNG_MQTT_PUBLISH);
 
 		payload = nng_mqtt_msg_get_publish_payload(msg, &payload_len);
+		buf = nng_mqtt_msg_get_publish_topic(msg, &topic_len);
+		strncpy(topic, buf, topic_len); topic[topic_len] = '\0';
+		fprintf(stderr, "topic %s \n", topic);
 
-		// print80("Received: ", (char *) payload, payload_len, true);
 		rv = nftp_proto_handler(payload, payload_len, &retpayload, &retpayload_len);
-		if (rv == 0 && retpayload == NULL) {
-			int blocks;
-			test_log("Recv NFTP_ACK");
-			nftp_file_blocks(FILENAME, &blocks);
-			for (int i=0; i<blocks; ++i) {
-				if (0 != nftp_proto_maker(FILENAME, NFTP_TYPE_FILE, i, &payload, &payload_len)) {
-					fatal("nftp_proto_maker", rv);
+
+		if (0 == strcmp(topic_files, topic)) {
+			char * fname = malloc(sizeof(char) *(topic_len + 1));
+			strncpy(fname, payload, payload_len);
+			fname[payload_len] = '\0';
+
+			// nftp filename register
+			printf("File [%s] registered\n", fname);
+			nftp_proto_register(fname, test_log,
+			    (void *) "File transfer finished.", NFTP_SENDER);
+
+			// For sender
+			nftp_proto_send_start(fname);
+			nftp_proto_maker(fname, NFTP_TYPE_HELLO, 0, &data, &datasz);
+
+			client_publish(sock, nftp_topic_sender, data, datasz, 1);
+			printf("Send NFTP_HELLO\n");
+		} else {
+			if (rv == 0 && retpayload == NULL) {
+				int blocks;
+				printf("Recv NFTP_ACK\n");
+				nftp_file_blocks(FILENAME, &blocks);
+				for (int i = 0; i < blocks; ++i) {
+					if (0 != nftp_proto_maker(FILENAME,
+					        NFTP_TYPE_FILE, i, &payload, &payload_len)) {
+						fatal("nftp_proto_maker", rv);
+					}
+					client_publish(sock, nftp_topic_sender, payload, payload_len, 1);
+					nng_msleep(10);
+					printf("SEND NFTP_FILE/END\n");
+					free(payload);
 				}
-				client_publish(sock, nftp_topic_sender, payload, payload_len, 1);
-				nng_msleep(10);
-				test_log("SEND NFTP_FILE/END");
-				free(payload);
 			}
+			printf("Send Done.\n");
+			nng_msg_free(msg);
+			break;
 		}
-		printf("Send Done.\n");
 
 		nng_msg_free(msg);
-	} while(0);
+	};
 
 	return rv;
 }
