@@ -163,6 +163,7 @@ int
 client_subscribe(nng_socket sock, nng_mqtt_topic_qos *subscriptions, int count)
 {
 	int rv;
+	char *fname = NULL;
 
 	// create a SUBSCRIBE message
 	nng_msg *submsg;
@@ -205,15 +206,19 @@ client_subscribe(nng_socket sock, nng_mqtt_topic_qos *subscriptions, int count)
 		payload = nng_mqtt_msg_get_publish_payload(msg, &payload_len);
 		buf = nng_mqtt_msg_get_publish_topic(msg, &topic_len);
 		strncpy(topic, buf, topic_len); topic[topic_len] = '\0';
-		fprintf(stderr, "topic %s \n", topic);
+		// fprintf(stderr, "topic %s \n", topic);
 
 		rv = nftp_proto_handler(payload, payload_len, &retpayload, &retpayload_len);
 
 		if (0 == strcmp(topic_files, topic)) {
-			char * fname = malloc(sizeof(char) *(topic_len + 1));
+			fname = malloc(sizeof(char) *(topic_len + 1));
 			strncpy(fname, payload, payload_len);
 			fname[payload_len] = '\0';
 
+			if (0 == nftp_file_exist(fname)) {
+				printf("No such file [%s]\n", fname);
+				exit(0);
+			}
 			// nftp filename register
 			printf("File [%s] registered\n", fname);
 			nftp_proto_register(fname, test_log,
@@ -226,12 +231,16 @@ client_subscribe(nng_socket sock, nng_mqtt_topic_qos *subscriptions, int count)
 			client_publish(sock, nftp_topic_sender, data, datasz, 1);
 			printf("Send NFTP_HELLO\n");
 		} else {
+			if (fname == NULL) {
+				printf("fname is empty\n");
+				continue;
+			}
 			if (rv == 0 && retpayload == NULL) {
 				int blocks;
 				printf("Recv NFTP_ACK\n");
-				nftp_file_blocks(FILENAME, &blocks);
+				nftp_file_blocks(fname, &blocks);
 				for (int i = 0; i < blocks; ++i) {
-					if (0 != nftp_proto_maker(FILENAME,
+					if (0 != nftp_proto_maker(fname,
 					        NFTP_TYPE_FILE, i, &payload, &payload_len)) {
 						fatal("nftp_proto_maker", rv);
 					}

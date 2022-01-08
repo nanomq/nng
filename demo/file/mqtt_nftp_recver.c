@@ -207,6 +207,8 @@ client_subscribe(nng_socket sock, nng_mqtt_topic_qos *subscriptions, int count)
 			} else {
 				printf("Recved NFTP_FILE/END\n");
 			}
+			payload = NULL;
+			payload_len = 0;
 		}
 
 		nng_msg_free(msg);
