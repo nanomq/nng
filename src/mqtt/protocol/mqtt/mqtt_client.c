@@ -26,7 +26,7 @@ typedef struct mqtt_sock_s mqtt_sock_t;
 typedef struct mqtt_pipe_s mqtt_pipe_t;
 typedef struct mqtt_ctx_s  mqtt_ctx_t;
 
-static int  mqtt_sock_init(void *arg, nni_sock *sock);
+static void mqtt_sock_init(void *arg, nni_sock *sock);
 static void mqtt_sock_fini(void *arg);
 static void mqtt_sock_open(void *arg);
 static void mqtt_sock_send(void *arg, nni_aio *aio);
@@ -45,7 +45,7 @@ static int  mqtt_pipe_start(void *arg);
 static void mqtt_pipe_stop(void *arg);
 static void mqtt_pipe_close(void *arg);
 
-static int  mqtt_ctx_init(void *arg, void *sock);
+static void mqtt_ctx_init(void *arg, void *sock);
 static void mqtt_ctx_fini(void *arg);
 static void mqtt_ctx_send(void *arg, nni_aio *aio);
 static void mqtt_ctx_recv(void *arg, nni_aio *aio);
@@ -182,7 +182,7 @@ work_timer_cancel(work_t *work)
  *                              Sock Implementation                           *
  ******************************************************************************/
 
-static int
+static void
 mqtt_sock_init(void *arg, nni_sock *sock)
 {
 	NNI_ARG_UNUSED(sock);
@@ -206,8 +206,6 @@ mqtt_sock_init(void *arg, nni_sock *sock)
 	NNI_LIST_INIT(&s->send_queue, work_t, node);
 	NNI_LIST_INIT(&s->recv_queue, work_t, node);
 	NNI_LIST_INIT(&s->free_list, work_t, node);
-
-	return (0);
 }
 
 static void
@@ -425,7 +423,7 @@ mqtt_pipe_get_next_packet_id(mqtt_pipe_t *p)
 static inline void
 mqtt_pipe_recv_msgq_putq(mqtt_pipe_t *p, nni_msg *msg)
 {
-	if (0 != nni_lmq_putq(&p->recv_messages, msg)) {
+	if (0 != nni_lmq_put(&p->recv_messages, msg)) {
 		// resize to ensure we do not lost messages
 		// TODO: add option to drop messages
 		if (0 !=
@@ -435,7 +433,7 @@ mqtt_pipe_recv_msgq_putq(mqtt_pipe_t *p, nni_msg *msg)
 			nni_msg_free(msg);
 			return;
 		}
-		nni_lmq_putq(&p->recv_messages, msg);
+		nni_lmq_put(&p->recv_messages, msg);
 	}
 }
 
@@ -894,7 +892,7 @@ mqtt_run_recv_queue(mqtt_sock_t *s)
 	nni_msg *    msg;
 
 	while (NULL != work) {
-		if (0 != nni_lmq_getq(&p->recv_messages, &msg)) {
+		if (0 != nni_lmq_get(&p->recv_messages, &msg)) {
 			break;
 		}
 		nni_list_remove(&s->recv_queue, work);
@@ -981,15 +979,13 @@ mqtt_send_start(mqtt_sock_t *s)
  *                           Context Implementation                           *
  ******************************************************************************/
 
-static int
+static void
 mqtt_ctx_init(void *arg, void *sock)
 {
 	mqtt_ctx_t * ctx = arg;
 	mqtt_sock_t *s   = sock;
 
 	ctx->mqtt_sock = s;
-
-	return (0);
 }
 
 static void

@@ -325,7 +325,7 @@ init_dialer_tls(nng_dialer d, const char *cacert, const char *cert,
 		}
 	}
 
-	rv = nng_dialer_setopt_ptr(d, NNG_OPT_TLS_CONFIG, cfg);
+	rv = nng_dialer_set_ptr(d, NNG_OPT_TLS_CONFIG, cfg);
 
 out:
 	nng_tls_config_free(cfg);
