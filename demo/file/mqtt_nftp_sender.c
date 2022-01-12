@@ -29,6 +29,7 @@
 // Subcommands
 #define PUBLISH "pub"
 #define SUBSCRIBE "sub"
+#define TOPIC_FILES "files"
 
 void fatal(const char *, int);
 static void disconnect_cb(void *, nng_msg *);
@@ -41,7 +42,7 @@ int mqtt_nftp_sender_start(nng_socket, char *);
 char * nftp_topic_sender = "sender----recver";
 char * nftp_topic_recver = "recver----sender";
 
-char * topic_files = "files";
+char * topic_files = TOPIC_FILES;
 
 static int test_log(void * t) { printf("%s\n", (char *)t); return 0;}
 
@@ -53,6 +54,10 @@ main(const int argc, const char **argv)
 
 	const char *url = "mqtt-tcp://127.0.0.1:1883";
 	// const char *url = "mqtt-tcp://192.168.23.105:1885";
+
+	if (argc > 1) {
+		topic_files = argv[1];
+	}
 
 	client_connect(&sock, url);
 	nng_msleep(1000);
@@ -245,7 +250,7 @@ client_subscribe(nng_socket sock, nng_mqtt_topic_qos *subscriptions, int count)
 						fatal("nftp_proto_maker", rv);
 					}
 					client_publish(sock, nftp_topic_sender, payload, payload_len, 1);
-					nng_msleep(10);
+					nng_msleep(200);
 					printf("SEND NFTP_FILE/END\n");
 					free(payload);
 				}
