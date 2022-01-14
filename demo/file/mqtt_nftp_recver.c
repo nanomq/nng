@@ -210,7 +210,7 @@ client_subscribe(nng_socket sock, nng_mqtt_topic_qos *subscriptions, int count)
 			payload = NULL;
 			payload_len = 0;
 		}
-		nng_msleep(100);
+		nng_msleep(200);
 
 		nng_msg_free(msg);
 	}

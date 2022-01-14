@@ -216,7 +216,7 @@ client_subscribe(nng_socket sock, nng_mqtt_topic_qos *subscriptions, int count)
 		rv = nftp_proto_handler(payload, payload_len, &retpayload, &retpayload_len);
 
 		if (0 == strcmp(topic_files, topic)) {
-			fname = malloc(sizeof(char) *(topic_len + 1));
+			fname = malloc(sizeof(char) *(payload_len + 1));
 			strncpy(fname, payload, payload_len);
 			fname[payload_len] = '\0';
 
@@ -250,7 +250,7 @@ client_subscribe(nng_socket sock, nng_mqtt_topic_qos *subscriptions, int count)
 						fatal("nftp_proto_maker", rv);
 					}
 					client_publish(sock, nftp_topic_sender, payload, payload_len, 1);
-					nng_msleep(200);
+					nng_msleep(250);
 					printf("SEND NFTP_FILE/END\n");
 					free(payload);
 				}
