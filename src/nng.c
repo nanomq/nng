@@ -1900,3 +1900,33 @@ nng_version(void)
 	return (xstr(NNG_MAJOR_VERSION) "." xstr(NNG_MINOR_VERSION) "." xstr(
 	    NNG_PATCH_VERSION) NNG_RELEASE_SUFFIX);
 }
+
+int
+nng_extbuf_msg_alloc(nng_msg **msgp, size_t sz, void *ops, void *ext)
+{
+	int rv;
+
+	if (0 != (rv = nni_msg_alloc(msgp, sz))) return rv;
+	nni_msg_set_proto_data(*msgp, ops, ext);
+
+	return 0;
+}
+
+int
+nng_extbuf_msg_set_dup(nng_msg *msg, int (*dup)(void **, const void *))
+{
+	return nni_msg_proto_set_dup(msg, dup);
+}
+
+int
+nng_extbuf_msg_set_free(nng_msg *msg, int (*free)(void *))
+{
+	return nni_msg_proto_set_free(msg, free);
+}
+
+void *
+nng_extbuf_msg_get_proto_data(nng_msg *msg)
+{
+	return nni_msg_get_proto_data(msg);
+}
+

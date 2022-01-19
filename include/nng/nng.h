@@ -1277,6 +1277,11 @@ NNG_DECL int nng_pipe_getopt_string(nng_pipe, const char *, char **);
 // a library; it will affect all sockets.
 NNG_DECL void nng_closeall(void);
 
+NNG_DECL int   nng_extbuf_msg_alloc(nng_msg **, size_t, void *, void *);
+NNG_DECL int   nng_extbuf_msg_set_dup(nng_msg *, int (*)(void **, const void *));
+NNG_DECL int   nng_extbuf_msg_set_free(nng_msg *, int (*)(void *));
+NNG_DECL void *nng_extbuf_msg_get_proto_data(nng_msg *);
+
 #endif
 
 #ifdef __cplusplus

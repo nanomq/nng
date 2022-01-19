@@ -24,11 +24,13 @@ typedef struct {
 
 // Underlying message structure.
 struct nng_msg {
-	uint32_t       m_header_buf[(NNI_MAX_MAX_TTL + 1)];
-	size_t         m_header_len;
-	nni_chunk      m_body;
-	uint32_t       m_pipe; // set on receive
-	nni_atomic_int m_refcnt;
+	uint32_t           m_header_buf[(NNI_MAX_MAX_TTL + 1)];
+	size_t             m_header_len;
+	nni_chunk          m_body;
+	uint32_t           m_pipe; // set on receive
+	nni_atomic_int     m_refcnt;
+	nni_proto_msg_ops *m_proto_ops;
+	void *             m_proto_data;
 };
 
 #if 0
@@ -634,3 +636,47 @@ nni_msg_get_pipe(const nni_msg *m)
 {
 	return (m->m_pipe);
 }
+
+void
+nni_msg_set_proto_data(nni_msg *m, void *o, void *data)
+{
+	nni_proto_msg_ops * ops = o;
+	if (m->m_proto_ops != NULL && m->m_proto_ops->msg_free != NULL) {
+		m->m_proto_ops->msg_free(m->m_proto_data);
+	}
+	m->m_proto_ops  = ops;
+	m->m_proto_data = data;
+}
+
+void *
+nni_msg_get_proto_data(nni_msg *m)
+{
+	return (m->m_proto_data);
+}
+
+uint8_t
+nni_msg_cmd_type(nni_msg *m)
+{
+	return ((uint8_t)m->m_header_buf[0] & 0xF0);
+}
+
+int
+nni_msg_proto_set_dup(nni_msg *m, int (*dup)(void **, const void *))
+{
+	if (!m || !m->m_proto_ops) {
+		return NNG_EEXIST;
+	}
+	m->m_proto_ops->msg_dup = dup;
+	return (0);
+}
+
+int
+nni_msg_proto_set_free(nni_msg *m, int (*free)(void *))
+{
+	if (!m || !m->m_proto_ops) {
+		return NNG_EEXIST;
+	}
+	m->m_proto_ops->msg_free = free;
+	return (0);
+}
+
