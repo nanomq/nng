@@ -244,7 +244,7 @@ client_subscribe(nng_socket sock, nng_mqtt_topic_qos *subscriptions, int count)
 				int blocks;
 				printf("Recv NFTP_ACK\n");
 				nftp_file_blocks(fname, &blocks);
-				for (int i = 0; i < blocks; ++i) {
+				for (int i = 1; i <= blocks; ++i) {
 					if (0 != nftp_proto_maker(fname,
 					        NFTP_TYPE_FILE, i, &payload, &payload_len)) {
 						fatal("nftp_proto_maker", rv);
