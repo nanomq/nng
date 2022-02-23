@@ -14,10 +14,11 @@ find_package(Threads)
 
 add_subdirectory(nftp-codec)
 include_directories(${CMAKE_CURRENT_SOURCE_DIR}/nftp-codec)
+include_directories(${CMAKE_CURRENT_SOURCE_DIR}/cjson)
 
 include_directories(${CMAKE_CURRENT_SOURCE_DIR})
 
-add_executable(mqtt_nftp_recver mqtt_nftp_recver.c)
+add_executable(mqtt_nftp_recver mqtt_nftp_recver.c cjson/cJSON.c)
 add_executable(mqtt_nftp_sender mqtt_nftp_sender.c)
 
 target_link_libraries(mqtt_nftp_recver nng nftp-codec hashtable ${CMAKE_THREAD_LIBS_INIT})
